@@ -1,0 +1,26 @@
+# claude-quant 默认配置
+# 本文件提交到 git，不包含任何密钥。
+# 密钥通过环境变量注入（参见 .env.example）。
+
+engine:
+  initial_capital: 1_000_000       # 初始资金（元）
+  commission_rate: 0.0003          # 佣金率（万三）
+  stamp_tax_rate: 0.001            # 印花税率（千一，仅卖出）
+  min_commission: 5.0              # 最低佣金（元）
+  slippage: 0.0                    # 滑点（回测默认 0，实盘可设为 0.0001）
+
+data:
+  root: "~/.cq/data"               # 本地数据根目录
+  source: "baostock"               # 默认数据源：baostock | tushare
+  # TUSHARE_TOKEN 通过环境变量注入，不写这里
+
+risk:
+  max_position_pct: 0.20           # 单股最大仓位（占总资产）
+  max_drawdown_stop: 0.15          # 最大回撤止损阈值
+  min_cash_reserve: 0.05           # 最低现金储备（占总资产）
+  max_daily_trades: 50             # 单日最大交易笔数
+
+logging:
+  level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
+  file: null                       # null=只输出控制台，填路径则同时写文件
+  rotation: "10 MB"                # 日志文件滚动大小

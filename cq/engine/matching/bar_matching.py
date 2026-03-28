@@ -1,0 +1,180 @@
+"""
+BarMatchingEngine：基于日线的订单撮合引擎。
+
+核心设计：
+- D 日下单 → 放入 pending_orders[D]
+- D+1 日 process_pending_orders(D+1) 时，用 D+1 的 bar 撮合 D 的订单
+- 保证无前视偏差（Look-ahead Bias Free）
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date, datetime, time
+
+from loguru import logger
+
+from cq.core.event_bus import EventBus
+from cq.core.events import FillEvent, OrderEvent, RejectEvent
+from cq.core.models import (
+    Bar,
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Trade,
+    new_trade_id,
+)
+from cq.data.calendar import TradingCalendar
+from cq.engine.portfolio import PortfolioManager
+from cq.utils.config import EngineConfig
+
+
+class BarMatchingEngine:
+    """
+    日线撮合引擎。
+
+    process_pending_orders(today) 必须在 today 的 bar 推送前调用，
+    以确保用 today 的价格撮合 yesterday 的订单（D+1 成交）。
+    """
+
+    def __init__(
+        self,
+        bus: EventBus,
+        portfolio: PortfolioManager,
+        calendar: TradingCalendar,
+        config: EngineConfig,
+    ) -> None:
+        self._bus = bus
+        self._portfolio = portfolio
+        self._calendar = calendar
+        self._config = config
+
+        # 待处理订单：{下单交易日: [Order]}
+        self._pending: dict[date, list[Order]] = defaultdict(list)
+        # 当日 bar 缓存（每日 bar 推送时更新）
+        self._current_bars: dict[str, Bar] = {}
+
+    def on_bar(self, bar: Bar) -> None:
+        """每日 bar 到达时更新价格缓存。"""
+        self._current_bars[bar.symbol] = bar
+
+    def on_order(self, event: OrderEvent) -> None:
+        """将订单放入当日的 pending 队列，等待 D+1 撮合。"""
+        order = event.order
+        self._pending[order.trade_date].append(order)
+        logger.debug(f"订单入队 {order.order_id} {order.symbol} {order.side.value} {order.quantity}股")
+
+    def process_pending_orders(self, today: date) -> None:
+        """
+        在 today 的 bar 推送前调用。
+        处理 yesterday（前一交易日）的所有挂单，用 today 的 bar 撮合。
+        """
+        try:
+            yesterday = self._calendar.prev_trading_day(today)
+        except ValueError:
+            return  # 第一个交易日，无前一日
+
+        pending = self._pending.pop(yesterday, [])
+        if not pending:
+            return
+
+        logger.debug(f"撮合 {yesterday} 的 {len(pending)} 笔订单（用 {today} 价格）")
+
+        for order in pending:
+            bar = self._current_bars.get(order.symbol)
+            if bar is None:
+                self._reject(order, f"无行情数据: {order.symbol} ({today})")
+                continue
+            self._match(order, bar)
+
+    # ── 撮合逻辑 ──────────────────────────────────────────────────────────────
+
+    def _match(self, order: Order, bar: Bar) -> None:
+        """用 today（D+1）的 bar 撮合 yesterday（D）的订单。"""
+        if bar.is_suspended:
+            self._reject(order, f"停牌: {order.symbol}")
+            return
+
+        if order.side == OrderSide.BUY:
+            self._match_buy(order, bar)
+        else:
+            self._match_sell(order, bar)
+
+    def _match_buy(self, order: Order, bar: Bar) -> None:
+        fill_price = bar.open
+
+        # 涨停开盘：无法买入
+        if fill_price >= bar.limit_up:
+            self._reject(order, f"涨停开盘({fill_price:.2f})，无法买入")
+            return
+
+        # 限价单：委托价低于开盘价，无法成交
+        if order.order_type == OrderType.LIMIT and order.limit_price is not None:
+            if order.limit_price < fill_price:
+                self._reject(order, f"限价{order.limit_price:.2f} < 开盘{fill_price:.2f}")
+                return
+            fill_price = min(order.limit_price, fill_price)
+
+        self._fill(order, fill_price, bar)
+
+    def _match_sell(self, order: Order, bar: Bar) -> None:
+        # T+1 最终检查（PreTradeRisk 已检查，这里是最后防线）
+        pos = self._portfolio.get_position(order.symbol)
+        tradeable = pos.tradeable_qty if pos else 0
+
+        if tradeable < order.quantity:
+            self._reject(order, f"T+1限制: 可卖{tradeable}股，请求卖{order.quantity}股")
+            return
+
+        fill_price = bar.open
+
+        # 跌停封板：无法卖出（开盘即跌停且全天收于跌停）
+        if fill_price <= bar.limit_down and bar.close <= bar.limit_down:
+            self._reject(order, f"跌停封板({fill_price:.2f})，无法卖出")
+            return
+
+        # 限价单：委托价高于开盘价，以开盘价成交（对卖方有利）
+        if order.order_type == OrderType.LIMIT and order.limit_price is not None:
+            if order.limit_price > fill_price:
+                self._reject(order, f"限价{order.limit_price:.2f} > 开盘{fill_price:.2f}")
+                return
+
+        self._fill(order, fill_price, bar)
+
+    def _fill(self, order: Order, price: float, bar: Bar) -> None:
+        amount = price * order.quantity
+        commission = max(
+            amount * self._config.commission_rate,
+            self._config.min_commission,
+        )
+        stamp_tax = (
+            amount * self._config.stamp_tax_rate
+            if order.side == OrderSide.SELL
+            else 0.0
+        )
+
+        trade = Trade(
+            trade_id=new_trade_id(),
+            order_id=order.order_id,
+            symbol=order.symbol,
+            side=order.side,
+            quantity=order.quantity,
+            price=price,
+            amount=amount,
+            commission=round(commission, 2),
+            stamp_tax=round(stamp_tax, 2),
+            trade_time=datetime.combine(bar.trade_date, time(9, 30)),
+            trade_date=bar.trade_date,
+        )
+
+        self._bus.put(FillEvent(trade=trade))
+        logger.debug(
+            f"成交 {trade.symbol} {order.side.value} {trade.quantity}股 "
+            f"@{price:.2f}，手续费{trade.commission:.2f}"
+        )
+
+    def _reject(self, order: Order, reason: str) -> None:
+        order.status = OrderStatus.REJECTED
+        self._bus.put(RejectEvent(order_id=order.order_id, reason=reason))
+        logger.info(f"拒绝订单 {order.order_id} {order.symbol}: {reason}")

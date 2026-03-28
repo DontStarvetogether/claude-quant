@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-quant"
+version = "0.1.0"
+description = "A股量化交易框架，以生产实盘为最终目标设计"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.1",
+    "pyarrow>=14.0",
+    "numpy>=1.26",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "loguru>=0.7",
+    "baostock>=0.8.8",
+    "pandas-ta>=0.3.14b",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+tushare = ["tushare>=1.4"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.88",
+    "mypy>=1.7",
+    "ruff>=0.1",
+    "pandas-stubs>=2.1",
+]
+
+[project.scripts]
+cq = "cq.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cq*"]
+
+# ── Pytest ──────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "unit: pure in-memory tests, no external deps",
+    "integration: requires local parquet data",
+    "property: hypothesis property tests",
+    "slow: tests taking > 5s",
+]
+
+# ── Ruff (lint + format) ────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]  # line too long (handled by formatter)
+
+# ── Mypy ────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+exclude = ["tests/", "scripts/"]
