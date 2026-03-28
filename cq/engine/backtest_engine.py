@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 from loguru import logger
@@ -92,10 +92,18 @@ class BacktestEngine:
         print(result.summary())
     """
 
-    def __init__(self, config: Config) -> None:
+    # 进度回调类型：(current_idx, total, trade_date, total_assets) -> None
+    ProgressCallback = Callable[[int, int, date, float], None]
+
+    def __init__(
+        self,
+        config: Config,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> None:
         self._config = config
         self._strategy: Optional[Strategy] = None
         self._symbols: list[str] = []
+        self._progress_callback = progress_callback
 
     def add_strategy(self, strategy: Strategy, symbols: list[str]) -> None:
         if not strategy.strategy_id:
@@ -188,11 +196,18 @@ class BacktestEngine:
             # 步骤 7：记录权益快照
             equity_curve[trade_date] = portfolio.get_total_assets()
 
-            if (i + 1) % 50 == 0:
+            if (i + 1) % 20 == 0 or (i + 1) == len(trade_dates):
                 logger.debug(
                     f"进度 {i+1}/{len(trade_dates)} {trade_date} "
                     f"总资产 {portfolio.get_total_assets():,.0f}"
                 )
+                if self._progress_callback:
+                    self._progress_callback(
+                        i + 1,
+                        len(trade_dates),
+                        trade_date,
+                        portfolio.get_total_assets(),
+                    )
 
         # 计算指标
         equity_series = pd.Series(equity_curve)

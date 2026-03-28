@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>回测结果 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-4">
+    <a href="/" class="text-gray-400 hover:text-blue-400 transition-colors text-sm">← 返回</a>
+    <span class="text-blue-400 font-bold tracking-tight">CLAUDE QUANT</span>
+    <div id="header-info" class="flex gap-3 text-sm text-gray-500">
+      <span id="header-strategy">—</span>
+      <span>|</span>
+      <span id="header-symbols">—</span>
+      <span>|</span>
+      <span id="header-dates">—</span>
+    </div>
+  </header>
+
+  <!-- 加载状态 -->
+  <div id="loading" class="flex items-center justify-center h-64">
+    <div class="text-gray-500 text-sm">加载中...</div>
+  </div>
+
+  <!-- 主内容（结果加载后显示）-->
+  <main id="main-content" class="hidden max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+    <!-- 关键指标卡片 -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="metric-card">
+        <p class="metric-label">总收益率</p>
+        <p id="m-total-return" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">年化收益率</p>
+        <p id="m-annual-return" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">最大回撤</p>
+        <p id="m-max-drawdown" class="metric-value text-red-400">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">夏普比率</p>
+        <p id="m-sharpe" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">胜率</p>
+        <p id="m-win-rate" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">总交易次数</p>
+        <p id="m-total-trades" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">最终净值</p>
+        <p id="m-final-value" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">总手续费</p>
+        <p id="m-total-fees" class="metric-value text-yellow-400">—</p>
+      </div>
+    </section>
+
+    <!-- 权益曲线 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-4">权益曲线 & 回撤</h2>
+      <div id="equity-chart" style="height: 360px;"></div>
+    </section>
+
+    <!-- 下方两栏：详细指标 + 成交记录 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+      <!-- 详细指标 -->
+      <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">详细指标</h2>
+        <div class="space-y-1 text-sm" id="detail-metrics"></div>
+      </section>
+
+      <!-- 成交记录 -->
+      <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-gray-300">成交记录</h2>
+          <button id="export-csv-btn"
+            class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+            导出 CSV
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-gray-500 border-b border-gray-800">
+                <th class="text-left pb-2">日期</th>
+                <th class="text-left pb-2">方向</th>
+                <th class="text-left pb-2">股票</th>
+                <th class="text-right pb-2">价格</th>
+                <th class="text-right pb-2">数量</th>
+                <th class="text-right pb-2">手续费</th>
+              </tr>
+            </thead>
+            <tbody id="trades-tbody" class="divide-y divide-gray-800/50"></tbody>
+          </table>
+        </div>
+        <p id="trades-summary" class="text-xs text-gray-600 mt-3"></p>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/result.js"></script>
+</body>
+</html>

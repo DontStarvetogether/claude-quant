@@ -1,0 +1,90 @@
+/* Claude Quant — 量化风格样式 */
+
+:root {
+  --color-up: #34d399;
+  --color-down: #f87171;
+  --color-neutral: #94a3b8;
+}
+
+/* 全局基础 */
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 指标卡片 */
+.metric-card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+.metric-label {
+  font-size: 0.7rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e5e7eb;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 数值颜色 */
+.positive { color: var(--color-up) !important; }
+.negative { color: var(--color-down) !important; }
+
+/* 成交记录表格行 */
+.trade-buy td:first-child + td { color: var(--color-up); }
+.trade-sell td:first-child + td { color: var(--color-down); }
+
+/* 历史记录卡片 */
+.history-card {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.history-card:hover {
+  border-color: #3b82f6;
+  background: #1e2a3a;
+}
+
+/* 进度条动画 */
+#progress-bar {
+  transition: width 0.4s ease;
+}
+
+/* 详细指标行 */
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #1f2937;
+}
+.metric-row:last-child { border-bottom: none; }
+.metric-row-label { color: #6b7280; }
+.metric-row-value { font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* 表单 range 样式 */
+input[type="range"] {
+  height: 4px;
+  border-radius: 2px;
+  background: #374151;
+  cursor: pointer;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
