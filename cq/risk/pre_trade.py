@@ -35,24 +35,25 @@ class PreTradeRisk:
         total_assets = self._portfolio.get_total_assets()
         cash = self._portfolio.get_cash()
         pos = self._portfolio.get_position(signal.symbol)
-
-        # 计算本次买入金额
-        buy_amount = self._calc_buy_amount(signal, total_assets)
+        pos_value = pos.market_value if pos else 0.0
+        
+        # 计算本次买入金额（基于可用现金）
+        buy_amount = self._calc_buy_amount(signal, cash + pos_value)
+        
         if buy_amount <= 0:
             return False, "买入金额为零（资金不足或量 < 100 股）"
-
+        
         # 单股仓位上限
-        pos_value = pos.market_value if pos else 0.0
         new_pct = (pos_value + buy_amount) / total_assets if total_assets > 0 else 1.0
         if new_pct > self._config.max_position_pct:
             return False, (
                 f"单股仓位 {new_pct:.1%} 超过上限 {self._config.max_position_pct:.1%}"
             )
-
+        
         # 现金够不够
         if cash < buy_amount:
             return False, f"可用现金 {cash:.0f} 不足，需要 {buy_amount:.0f}"
-
+        
         # 买入后现金储备检查
         remaining = cash - buy_amount
         min_reserve = total_assets * self._config.min_cash_reserve
@@ -60,7 +61,7 @@ class PreTradeRisk:
             return False, (
                 f"买入后现金 {remaining:.0f} 低于最低储备 {min_reserve:.0f}"
             )
-
+        
         return True, ""
 
     def _check_sell(self, signal: Signal) -> tuple[bool, str]:
