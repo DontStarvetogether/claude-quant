@@ -38,17 +38,16 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
     # 计算最终持有现金和持仓市值
     final_cash = _safe_float(m.final_value) or 0.0
     final_position_value = 0.0
-
-    # 从权益曲线获取最后一个数据点
-    if result.equity_curve and len(result.equity_curve.dates) > 0:
-        # 从交易记录计算最终现金
+    
+    # 从交易记录计算最终现金
+    if result.trades:
         current_cash = result.initial_capital
         for t in result.trades:
             if t.side.value == 'BUY':
                 current_cash -= t.net_amount
             else:
                 current_cash += t.net_amount
-
+        
         final_cash = current_cash
         final_value = _safe_float(m.final_value) or 0.0
         final_position_value = max(0.0, final_value - final_cash)
