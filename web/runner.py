@@ -10,13 +10,13 @@ from __future__ import annotations
 import importlib
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date as _date
 from typing import Any
 
 from loguru import logger
 
 from cq.engine.backtest_engine import BacktestEngine
-from cq.utils.config import Config, DataConfig, EngineConfig, RiskConfig
+from cq.utils.config import Config
 from web.store import RunRecord, run_store
 
 # 内置策略注册表：strategy_id → Python 类路径
@@ -56,7 +56,6 @@ def load_strategy(strategy_id: str, params: dict[str, Any]):
     cls = getattr(module, class_name)
     strategy = cls()
 
-    # 设置参数（覆盖 on_init 的默认值）
     for k, v in params.items():
         if hasattr(strategy, k):
             setattr(strategy, k, v)
@@ -90,6 +89,50 @@ def submit_backtest(
     )
 
 
+def _ensure_data(
+    config: Config,
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+    record: RunRecord,
+    start_time: float,
+) -> None:
+    """通过 AKShare DataPipeline 确保回测所需数据已下载到本地缓存。"""
+    from cq.data.calendar import TradingCalendar
+    from cq.data.pipeline import DataPipeline
+    from cq.data.source import create_source
+    from cq.data.store.parquet_store import ParquetStore
+
+    store = ParquetStore(config.data.root_path)
+    source = create_source("akshare")
+
+    # 同步交易日历（本地没有时自动下载）
+    calendar_days = store.read_calendar("SSE")
+    if not calendar_days:
+        record.current_date = "同步交易日历..."
+        record.elapsed_seconds = time.monotonic() - start_time
+        tmp_pipeline = DataPipeline(source, store, None)  # type: ignore[arg-type]
+        tmp_pipeline.sync_calendar("SSE")
+        calendar_days = store.read_calendar("SSE")
+
+    if not calendar_days:
+        raise RuntimeError("无法获取交易日历，请检查网络连接")
+
+    calendar = TradingCalendar(calendar_days)
+    pipeline = DataPipeline(source, store, calendar)
+
+    end = _date.fromisoformat(end_date)
+    start = _date.fromisoformat(start_date)
+
+    for i, sym in enumerate(symbols):
+        record.current_date = f"下载数据 {sym} ({i + 1}/{len(symbols)})..."
+        record.elapsed_seconds = time.monotonic() - start_time
+        try:
+            pipeline.update_symbol(sym, end, start_date=start)
+        except Exception as e:
+            logger.warning(f"数据下载失败 {sym}: {e}，将使用已有本地数据")
+
+
 def _run_backtest(
     run_id: str,
     strategy_id: str,
@@ -107,9 +150,10 @@ def _run_backtest(
         return
 
     record.status = "running"
+    record.total_assets = initial_capital  # 下载阶段显示初始资金
     start_time = time.monotonic()
 
-    def on_progress(current: int, total: int, trade_date: date, total_assets: float) -> None:
+    def on_progress(current: int, total: int, trade_date: _date, total_assets: float) -> None:
         record.progress = int(current / total * 100)
         record.current_date = str(trade_date)
         record.total_assets = total_assets
@@ -122,9 +166,11 @@ def _run_backtest(
         config.risk.min_cash_reserve = risk_params.get("min_cash_reserve", 0.05)
         config.risk.max_drawdown_stop = risk_params.get("max_drawdown_stop", 0.15)
 
+        # 从 AKShare 下载/增量更新数据
+        _ensure_data(config, symbols, start_date, end_date, record, start_time)
+
         strategy = load_strategy(strategy_id, strategy_params)
 
-        # 注入进度回调后，在 on_init 之前设置参数
         for k, v in strategy_params.items():
             if hasattr(strategy, k):
                 setattr(strategy, k, v)

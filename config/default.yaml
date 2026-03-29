@@ -11,7 +11,7 @@ engine:
 
 data:
   root: "~/.cq/data"               # 本地数据根目录
-  source: "baostock"               # 默认数据源：baostock | tushare
+  source: "akshare"                # 默认数据源：akshare | baostock
   # TUSHARE_TOKEN 通过环境变量注入，不写这里
 
 risk:

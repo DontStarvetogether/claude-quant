@@ -76,14 +76,18 @@ async def stream_progress(run_id: str) -> StreamingResponse:
 
     async def event_generator() -> AsyncIterator[str]:
         last_progress = -1
+        last_date: str | None = None
 
         while True:
             rec = run_store.get(run_id)
             if rec is None:
                 break
 
-            if rec.status == "running" and rec.progress != last_progress:
+            if rec.status == "running" and (
+                rec.progress != last_progress or rec.current_date != last_date
+            ):
                 last_progress = rec.progress
+                last_date = rec.current_date
                 data = json.dumps({
                     "progress": rec.progress,
                     "current_date": rec.current_date,

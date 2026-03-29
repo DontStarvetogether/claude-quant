@@ -22,14 +22,14 @@ from loguru import logger
 
 from cq.data.calendar import TradingCalendar
 from cq.data.pipeline import DataPipeline
-from cq.data.source.baostock import BaostockSource
+from cq.data.source import create_source
 from cq.data.store.parquet_store import ParquetStore
 from cq.utils.config import Config
 
 
 def _build_pipeline(config: Config) -> DataPipeline:
     store = ParquetStore(config.data.root_path)
-    source = BaostockSource()
+    source = create_source(config.data.source)
 
     # 加载日历
     calendar_days = store.read_calendar("SSE")
@@ -97,10 +97,10 @@ def main(
     logger.info(f"下载 {len(symbols)} 只股票：{list(symbols)}")
 
     if len(symbols) == 1:
-        result = pipeline.update_symbol(symbols[0], end_date, force=force)
+        result = pipeline.update_symbol(symbols[0], end_date, start_date=start_date, force=force)
         logger.info(f"完成，新增 {result} 条记录")
     else:
-        results = pipeline.update_batch(list(symbols), end_date, max_workers=workers, force=force)
+        results = pipeline.update_batch(list(symbols), end_date, start_date=start_date, max_workers=workers, force=force)
         total = sum(results.values())
         logger.info(f"全部完成，共新增 {total} 条记录")
 

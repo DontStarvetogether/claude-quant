@@ -2,6 +2,26 @@
  * 结果页：图表渲染 + 指标展示 + 成交记录
  */
 
+// 股票代码 → 公司名映射（从后端动态获取）
+let STOCK_NAMES = {};
+let stockNamesLoaded = false;
+
+// 从后端获取股票名称映射
+async function loadStockNames() {
+  if (stockNamesLoaded) return;
+  
+  try {
+    const data = await API.getSymbols();
+    STOCK_NAMES = Object.fromEntries(
+      data.symbols.map(s => [s.symbol, s.name])
+    );
+    stockNamesLoaded = true;
+    console.log(`已加载 ${Object.keys(STOCK_NAMES).length} 只股票名称`);
+  } catch (e) {
+    console.error('加载股票名称失败', e);
+  }
+}
+
 let resultData = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -14,8 +34,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   try {
+    // 先加载股票名称映射
+    await loadStockNames();
+    
     resultData = await API.getResult(runId);
     renderPage(resultData);
+
   } catch (e) {
     document.getElementById('loading').textContent = '加载失败：' + e.message;
   }
@@ -26,9 +50,11 @@ function renderPage(data) {
   document.getElementById('loading').classList.add('hidden');
   document.getElementById('main-content').classList.remove('hidden');
 
-  // Header
+  // Header：显示股票代码+公司名
   document.getElementById('header-strategy').textContent = data.strategy_name;
-  document.getElementById('header-symbols').textContent = data.symbols.join(', ');
+  document.getElementById('header-symbols').textContent = data.symbols
+    .map(s => STOCK_NAMES[s] ? `${s}(${STOCK_NAMES[s]})` : s)
+    .join(', ');
   document.getElementById('header-dates').textContent = `${data.start_date} → ${data.end_date}`;
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
@@ -174,7 +200,7 @@ function renderTradesTable(trades) {
   const tbody = document.getElementById('trades-tbody');
 
   if (!trades.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
     return;
   }
 
@@ -182,14 +208,23 @@ function renderTradesTable(trades) {
     const isBuy = t.side === 'BUY';
     const rowClass = isBuy ? 'trade-buy' : 'trade-sell';
     const sideColor = isBuy ? 'text-green-400' : 'text-red-400';
+    const companyName = STOCK_NAMES[t.symbol] || '';
+    
     return `
       <tr class="${rowClass} hover:bg-gray-800/30 transition-colors">
+        <td class="py-1.5 text-gray-500 font-mono text-xs">${t.trade_id.substring(0, 8)}</td>
         <td class="py-1.5 text-gray-400">${t.trade_date}</td>
         <td class="${sideColor} font-medium">${isBuy ? '买入' : '卖出'}</td>
-        <td class="text-gray-300">${t.symbol}</td>
+        <td>
+          <div class="text-gray-300">${t.symbol}</div>
+          ${companyName ? `<div class="text-gray-500 text-xs">${companyName}</div>` : ''}
+        </td>
         <td class="text-right text-gray-200">${t.price.toFixed(2)}</td>
         <td class="text-right text-gray-400">${t.quantity}</td>
+        <td class="text-right text-gray-300">${t.amount.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.commission.toFixed(2)}</td>
+        <td class="text-right text-yellow-600">${t.stamp_tax.toFixed(2)}</td>
+        <td class="text-right ${isBuy ? 'text-red-400' : 'text-green-400'} font-medium">${t.net_amount.toFixed(2)}</td>
       </tr>
     `;
   }).join('');
@@ -202,10 +237,19 @@ function renderTradesTable(trades) {
 
 // ── 导出 CSV ──────────────────────────────────────────────────────────────────
 function exportCsv(trades) {
-  const header = ['日期', '方向', '股票代码', '价格', '数量', '成交额', '佣金', '印花税', '净额'];
+  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '数量', '成交额', '佣金', '印花税', '净额'];
   const rows = trades.map(t => [
-    t.trade_date, t.side === 'BUY' ? '买入' : '卖出',
-    t.symbol, t.price, t.quantity, t.amount, t.commission, t.stamp_tax, t.net_amount,
+    t.trade_id,
+    t.trade_date,
+    t.side === 'BUY' ? '买入' : '卖出',
+    t.symbol,
+    STOCK_NAMES[t.symbol] || '',
+    t.price,
+    t.quantity,
+    t.amount,
+    t.commission,
+    t.stamp_tax,
+    t.net_amount,
   ]);
   const csv = [header, ...rows].map(r => r.join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });

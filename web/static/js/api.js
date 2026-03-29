@@ -46,6 +46,13 @@ const API = {
   async deleteRun(runId) {
     await fetch(`/api/backtest/${runId}`, { method: 'DELETE' });
   },
+
+  async getSymbols(syncNames = false) {
+    const url = syncNames ? '/api/symbols?sync_names=true' : '/api/symbols';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('获取股票池失败');
+    return res.json();
+  },
 };
 
 /**

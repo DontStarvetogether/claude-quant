@@ -41,7 +41,7 @@ class DoubleMaStrategy(Strategy):
         # 金叉买入（快线上穿慢线）
         if curr_fast > curr_slow and prev_fast <= prev_slow:
             if not has_pos and not AStockRules.is_limit_up(bar):
-                self.buy(bar.symbol, percent=0.95)
+                self.buy(bar.symbol, percent=0.9)
 
         # 死叉卖出（快线下穿慢线）
         elif curr_fast < curr_slow and prev_fast >= prev_slow:

@@ -143,3 +143,16 @@ class RunSummary(BaseModel):
 
 class HistoryResponse(BaseModel):
     runs: list[RunSummary]
+
+
+# ── 股票池 ────────────────────────────────────────────────────────────────────
+
+
+class SymbolInfo(BaseModel):
+    symbol: str
+    name: str
+
+
+class SymbolsResponse(BaseModel):
+    symbols: list[SymbolInfo]
+    total: int

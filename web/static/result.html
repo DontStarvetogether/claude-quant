@@ -95,12 +95,16 @@
           <table class="w-full text-xs">
             <thead>
               <tr class="text-gray-500 border-b border-gray-800">
+                <th class="text-left pb-2">交易ID</th>
                 <th class="text-left pb-2">日期</th>
                 <th class="text-left pb-2">方向</th>
                 <th class="text-left pb-2">股票</th>
                 <th class="text-right pb-2">价格</th>
                 <th class="text-right pb-2">数量</th>
-                <th class="text-right pb-2">手续费</th>
+                <th class="text-right pb-2">成交额</th>
+                <th class="text-right pb-2">佣金</th>
+                <th class="text-right pb-2">印花税</th>
+                <th class="text-right pb-2">净额</th>
               </tr>
             </thead>
             <tbody id="trades-tbody" class="divide-y divide-gray-800/50"></tbody>
@@ -113,6 +117,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/result.js"></script>
+  <script src="/static/js/result.js?v=5"></script>
 </body>
 </html>
