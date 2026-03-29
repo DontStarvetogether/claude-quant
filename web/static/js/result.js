@@ -85,6 +85,13 @@ function renderMetricCards(m) {
   set('m-win-rate', Fmt.pct(m.win_rate, 1));
   set('m-total-trades', m.total_trades + ' 笔');
   set('m-final-value', Fmt.money(m.final_value));
+  
+  // 显示持有现金和持仓市值的拆分
+  if (m.final_cash !== undefined && m.final_position_value !== undefined) {
+    const breakdown = `现金 ${Fmt.money(m.final_cash)} + 持仓 ${Fmt.money(m.final_position_value)}`;
+    set('m-final-breakdown', breakdown);
+  }
+  
   set('m-total-fees', Fmt.money(m.total_fees));
 }
 
@@ -200,7 +207,7 @@ function renderTradesTable(trades) {
   const tbody = document.getElementById('trades-tbody');
 
   if (!trades.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
     return;
   }
 
@@ -225,6 +232,7 @@ function renderTradesTable(trades) {
         <td class="text-right text-yellow-600">${t.commission.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.stamp_tax.toFixed(2)}</td>
         <td class="text-right ${isBuy ? 'text-red-400' : 'text-green-400'} font-medium">${t.net_amount.toFixed(2)}</td>
+        <td class="text-right text-blue-400 font-medium">${t.cash_after.toFixed(2)}</td>
       </tr>
     `;
   }).join('');
@@ -237,7 +245,7 @@ function renderTradesTable(trades) {
 
 // ── 导出 CSV ──────────────────────────────────────────────────────────────────
 function exportCsv(trades) {
-  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '数量', '成交额', '佣金', '印花税', '净额'];
+  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '数量', '成交额', '佣金', '印花税', '净额', '持有现金'];
   const rows = trades.map(t => [
     t.trade_id,
     t.trade_date,
@@ -250,6 +258,7 @@ function exportCsv(trades) {
     t.commission,
     t.stamp_tax,
     t.net_amount,
+    t.cash_after,
   ]);
   const csv = [header, ...rows].map(r => r.join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });

@@ -88,6 +88,8 @@ class MetricsDict(BaseModel):
     avg_hold_days: float
     total_fees: float
     final_value: float
+    final_cash: float  # 最终持有现金
+    final_position_value: float  # 最终持仓市值
     initial_value: float
     max_drawdown_start: Optional[str] = None
     max_drawdown_end: Optional[str] = None
@@ -110,6 +112,7 @@ class TradeRecord(BaseModel):
     commission: float
     stamp_tax: float
     net_amount: float
+    cash_after: float  # 交易后持有现金
 
 
 class BacktestResultResponse(BaseModel):

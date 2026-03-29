@@ -35,6 +35,24 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
 
     m = result.metrics
 
+    # 计算最终持有现金和持仓市值
+    final_cash = _safe_float(m.final_value) or 0.0
+    final_position_value = 0.0
+
+    # 从权益曲线获取最后一个数据点
+    if result.equity_curve and len(result.equity_curve.dates) > 0:
+        # 从交易记录计算最终现金
+        current_cash = result.initial_capital
+        for t in result.trades:
+            if t.side.value == 'BUY':
+                current_cash -= t.net_amount
+            else:
+                current_cash += t.net_amount
+
+        final_cash = current_cash
+        final_value = _safe_float(m.final_value) or 0.0
+        final_position_value = max(0.0, final_value - final_cash)
+
     metrics = MetricsDict(
         total_return=_safe_float(m.total_return) or 0.0,
         annual_return=_safe_float(m.annual_return) or 0.0,
@@ -51,6 +69,8 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         avg_hold_days=_safe_float(m.avg_hold_days) or 0.0,
         total_fees=_safe_float(m.total_fees) or 0.0,
         final_value=_safe_float(m.final_value) or 0.0,
+        final_cash=round(final_cash, 2),
+        final_position_value=round(final_position_value, 2),
         initial_value=_safe_float(m.initial_value) or 0.0,
         max_drawdown_start=str(m.max_drawdown_start) if m.max_drawdown_start else None,
         max_drawdown_end=str(m.max_drawdown_end) if m.max_drawdown_end else None,
@@ -58,21 +78,31 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
 
     equity_curve = _serialize_equity_curve(result.equity_curve)
 
-    trades = [
-        TradeRecord(
-            trade_id=t.trade_id,
-            symbol=t.symbol,
-            side=t.side.value,
-            trade_date=str(t.trade_date),
-            price=round(t.price, 4),
-            quantity=t.quantity,
-            amount=round(t.amount, 2),
-            commission=round(t.commission, 2),
-            stamp_tax=round(t.stamp_tax, 2),
-            net_amount=round(t.net_amount, 2),
+    trades = []
+    current_cash = result.initial_capital  # 初始现金
+    
+    for t in result.trades:
+        # 计算交易后的现金余额
+        if t.side.value == 'BUY':
+            current_cash -= t.net_amount  # 买入减少现金
+        else:
+            current_cash += t.net_amount  # 卖出增加现金
+        
+        trades.append(
+            TradeRecord(
+                trade_id=t.trade_id,
+                symbol=t.symbol,
+                side=t.side.value,
+                trade_date=str(t.trade_date),
+                price=round(t.price, 4),
+                quantity=t.quantity,
+                amount=round(t.amount, 2),
+                commission=round(t.commission, 2),
+                stamp_tax=round(t.stamp_tax, 2),
+                net_amount=round(t.net_amount, 2),
+                cash_after=round(current_cash, 2),  # 交易后持有现金
+            )
         )
-        for t in result.trades
-    ]
 
     return BacktestResultResponse(
         run_id=record.run_id,
