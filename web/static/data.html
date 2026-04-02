@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数据管理 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/data.html" class="text-gray-100 font-medium">数据管理</a>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100 mb-1">数据管理</h1>
+      <p class="text-sm text-gray-500">管理本地 A 股历史行情数据</p>
+    </div>
+
+    <!-- 统计概览 -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="metric-card">
+        <p class="metric-label">本地股票数</p>
+        <p id="stat-symbols" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">总记录数</p>
+        <p id="stat-records" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">磁盘占用</p>
+        <p id="stat-disk" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">最新数据日期</p>
+        <p id="stat-latest" class="metric-value text-sm">—</p>
+      </div>
+    </section>
+
+    <!-- 下载/更新数据 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-4">下载 / 更新数据</h2>
+
+      <div class="space-y-4">
+        <!-- 输入股票代码 -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">股票代码（留空表示更新所有本地数据）</label>
+          <div class="flex gap-2">
+            <input id="dl-symbols" type="text" placeholder="如 600519.SH 000858.SZ，空格分隔"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+          </div>
+        </div>
+
+        <!-- 起始日期 -->
+        <div class="flex gap-4 items-end">
+          <div class="flex-1">
+            <label class="block text-sm text-gray-400 mb-1">数据起始日期</label>
+            <input id="dl-start-date" type="date" value="2020-01-01"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+          </div>
+          <button id="dl-btn"
+            class="px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            开始下载
+          </button>
+          <button id="dl-update-all-btn"
+            class="px-5 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            更新全部
+          </button>
+        </div>
+
+        <!-- 进度区域 -->
+        <div id="dl-progress-area" class="hidden space-y-2">
+          <div class="flex justify-between text-xs text-gray-500">
+            <span id="dl-progress-text">准备中...</span>
+            <span id="dl-progress-count"></span>
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-1.5">
+            <div id="dl-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+          </div>
+          <p id="dl-current" class="text-xs text-gray-500"></p>
+          <div id="dl-errors" class="hidden">
+            <p class="text-xs text-red-400 mt-1">失败股票：</p>
+            <ul id="dl-error-list" class="text-xs text-red-400 ml-3 space-y-0.5 max-h-24 overflow-y-auto"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 本地数据列表 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">本地数据</h2>
+        <div class="flex items-center gap-3">
+          <input id="search-input" type="text" placeholder="搜索代码或名称..."
+            class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 w-44" />
+          <span id="table-total" class="text-xs text-gray-500"></span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-800">
+              <th class="text-left pb-2 pr-4">代码</th>
+              <th class="text-left pb-2 pr-4">名称</th>
+              <th class="text-right pb-2 pr-4">起始日期</th>
+              <th class="text-right pb-2 pr-4">最新日期</th>
+              <th class="text-right pb-2 pr-4">记录数</th>
+              <th class="text-right pb-2">状态</th>
+            </tr>
+          </thead>
+          <tbody id="data-tbody" class="divide-y divide-gray-800/50"></tbody>
+        </table>
+      </div>
+
+      <!-- 分页 -->
+      <div id="pagination" class="flex items-center justify-between mt-4 text-xs text-gray-500">
+        <button id="prev-btn"
+          class="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          上一页
+        </button>
+        <span id="page-info"></span>
+        <button id="next-btn"
+          class="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          下一页
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script>
+    // ── 状态 ──────────────────────────────────────────────────────────────────
+    let currentPage = 0;
+    const PAGE_SIZE = 50;
+    let totalItems = 0;
+    let searchQuery = '';
+    let searchTimer = null;
+
+    // 今天的日期字符串（用于判断数据是否最新）
+    const TODAY = new Date().toISOString().slice(0, 10);
+    // 7天前（认为数据不是最新）
+    const STALE_DAYS = 7;
+
+    // ── API 封装 ──────────────────────────────────────────────────────────────
+
+    async function fetchStats() {
+      const res = await fetch('/api/data/stats');
+      if (!res.ok) throw new Error('获取统计失败');
+      return res.json();
+    }
+
+    async function fetchSymbols(page, q) {
+      const params = new URLSearchParams({ page, page_size: PAGE_SIZE, q });
+      const res = await fetch(`/api/data/symbols?${params}`);
+      if (!res.ok) throw new Error('获取数据列表失败');
+      return res.json();
+    }
+
+    async function postDownload(symbols, startDate) {
+      const res = await fetch('/api/data/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols, start_date: startDate }),
+      });
+      if (!res.ok) throw new Error('下载请求失败');
+      return res.json();
+    }
+
+    // ── 加载统计 ──────────────────────────────────────────────────────────────
+
+    async function loadStats() {
+      try {
+        const s = await fetchStats();
+        document.getElementById('stat-symbols').textContent = s.total_symbols.toLocaleString();
+        document.getElementById('stat-records').textContent = s.total_records.toLocaleString();
+        document.getElementById('stat-disk').textContent = s.disk_usage_mb >= 1024
+          ? (s.disk_usage_mb / 1024).toFixed(1) + ' GB'
+          : s.disk_usage_mb.toFixed(0) + ' MB';
+        document.getElementById('stat-latest').textContent = s.latest_date || '—';
+      } catch (e) {
+        console.error('加载统计失败', e);
+      }
+    }
+
+    // ── 加载数据列表 ──────────────────────────────────────────────────────────
+
+    function dateFreshness(lastDate) {
+      if (!lastDate) return { cls: 'text-gray-600', label: '无数据' };
+      const diff = (new Date(TODAY) - new Date(lastDate)) / 86400000;
+      if (diff <= STALE_DAYS) return { cls: 'text-green-400', label: '最新' };
+      if (diff <= 30) return { cls: 'text-yellow-400', label: `${Math.round(diff)}天前` };
+      return { cls: 'text-red-400', label: `${Math.round(diff)}天前` };
+    }
+
+    async function loadTable() {
+      const tbody = document.getElementById('data-tbody');
+      tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-600">加载中...</td></tr>';
+
+      try {
+        const data = await fetchSymbols(currentPage, searchQuery);
+        totalItems = data.total;
+
+        document.getElementById('table-total').textContent = `共 ${totalItems} 只`;
+        document.getElementById('page-info').textContent =
+          `第 ${currentPage + 1} / ${Math.max(1, Math.ceil(totalItems / PAGE_SIZE))} 页`;
+        document.getElementById('prev-btn').disabled = currentPage === 0;
+        document.getElementById('next-btn').disabled = (currentPage + 1) * PAGE_SIZE >= totalItems;
+
+        if (!data.items.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-600">暂无数据</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.items.map(item => {
+          const fresh = dateFreshness(item.last_date);
+          return `
+            <tr class="hover:bg-gray-800/30 transition-colors">
+              <td class="py-1.5 pr-4 font-mono text-gray-300">${item.symbol}</td>
+              <td class="py-1.5 pr-4 text-gray-400">${item.name || '—'}</td>
+              <td class="py-1.5 pr-4 text-right text-gray-500">${item.first_date || '—'}</td>
+              <td class="py-1.5 pr-4 text-right text-gray-400">${item.last_date || '—'}</td>
+              <td class="py-1.5 pr-4 text-right text-gray-400">${item.records ? item.records.toLocaleString() : '0'}</td>
+              <td class="py-1.5 text-right ${fresh.cls}">${fresh.label}</td>
+            </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">${e.message}</td></tr>`;
+      }
+    }
+
+    // ── 下载进度 ──────────────────────────────────────────────────────────────
+
+    function startProgressStream(taskId, total) {
+      const area = document.getElementById('dl-progress-area');
+      const bar = document.getElementById('dl-progress-bar');
+      const text = document.getElementById('dl-progress-text');
+      const count = document.getElementById('dl-progress-count');
+      const current = document.getElementById('dl-current');
+      const errorsDiv = document.getElementById('dl-errors');
+      const errorList = document.getElementById('dl-error-list');
+
+      area.classList.remove('hidden');
+      errorsDiv.classList.add('hidden');
+      errorList.innerHTML = '';
+
+      const evtSource = new EventSource(`/api/data/download/${taskId}/progress`);
+
+      evtSource.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+
+        if (d.done) {
+          evtSource.close();
+          setDownloadBtns(true);
+          loadStats();
+          loadTable();
+          return;
+        }
+
+        const pct = total > 0 ? Math.round(d.done / total * 100) : 0;
+        bar.style.width = pct + '%';
+        text.textContent = d.status === 'completed' ? '完成' : d.status === 'failed' ? '失败' : '下载中...';
+        count.textContent = `${d.done} / ${total}`;
+        current.textContent = d.current ? `当前：${d.current}` : '';
+
+        if (d.errors && d.errors.length > 0) {
+          errorsDiv.classList.remove('hidden');
+          errorList.innerHTML = d.errors.map(er => `<li>${er}</li>`).join('');
+        }
+      };
+
+      evtSource.onerror = () => {
+        evtSource.close();
+        setDownloadBtns(true);
+        text.textContent = '连接中断';
+      };
+    }
+
+    function setDownloadBtns(enabled) {
+      document.getElementById('dl-btn').disabled = !enabled;
+      document.getElementById('dl-update-all-btn').disabled = !enabled;
+    }
+
+    // ── 事件绑定 ──────────────────────────────────────────────────────────────
+
+    document.getElementById('dl-btn').addEventListener('click', async () => {
+      const raw = document.getElementById('dl-symbols').value.trim();
+      const startDate = document.getElementById('dl-start-date').value;
+      const symbols = raw ? raw.split(/\s+/).filter(Boolean) : [];
+
+      if (!symbols.length) {
+        alert('请输入至少一个股票代码，或点击"更新全部"');
+        return;
+      }
+
+      setDownloadBtns(false);
+      try {
+        const { task_id } = await postDownload(symbols, startDate);
+        startProgressStream(task_id, symbols.length);
+      } catch (e) {
+        alert('下载失败：' + e.message);
+        setDownloadBtns(true);
+      }
+    });
+
+    document.getElementById('dl-update-all-btn').addEventListener('click', async () => {
+      // 更新所有本地已有股票
+      try {
+        const data = await fetchSymbols(0, '');
+        // 获取全量 symbol 列表（不分页）
+        const allRes = await fetch(`/api/data/symbols?page=0&page_size=9999`);
+        const allData = await allRes.json();
+        const symbols = allData.items.map(i => i.symbol);
+
+        if (!symbols.length) {
+          alert('本地暂无股票数据，请先输入代码下载');
+          return;
+        }
+
+        const startDate = document.getElementById('dl-start-date').value;
+        setDownloadBtns(false);
+        const { task_id } = await postDownload(symbols, startDate);
+        startProgressStream(task_id, symbols.length);
+      } catch (e) {
+        alert('操作失败：' + e.message);
+        setDownloadBtns(true);
+      }
+    });
+
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = e.target.value.trim();
+        currentPage = 0;
+        loadTable();
+      }, 300);
+    });
+
+    document.getElementById('prev-btn').addEventListener('click', () => {
+      if (currentPage > 0) { currentPage--; loadTable(); }
+    });
+
+    document.getElementById('next-btn').addEventListener('click', () => {
+      if ((currentPage + 1) * PAGE_SIZE < totalItems) { currentPage++; loadTable(); }
+    });
+
+    // ── 初始化 ────────────────────────────────────────────────────────────────
+
+    loadStats();
+    loadTable();
+  </script>
+</body>
+</html>

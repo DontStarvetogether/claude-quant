@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from web.routers import backtest, strategy, symbols
+from web.routers import backtest, data, strategy, symbols
 from web.data_update_service import DataUpdateService
 from cq.utils.config import Config
 
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(strategy.router)
 app.include_router(backtest.router)
 app.include_router(symbols.router)
+app.include_router(data.router)
 
 # 静态文件（前端）
 STATIC_DIR = Path(__file__).parent / "static"
@@ -72,3 +73,13 @@ async def index():
 @app.get("/result.html", include_in_schema=False)
 async def result_page():
     return FileResponse(STATIC_DIR / "result.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/strategies.html", include_in_schema=False)
+async def strategies_page():
+    return FileResponse(STATIC_DIR / "strategies.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/data.html", include_in_schema=False)
+async def data_page():
+    return FileResponse(STATIC_DIR / "data.html", headers=_NO_CACHE_HEADERS)

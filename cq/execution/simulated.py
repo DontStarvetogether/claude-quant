@@ -40,6 +40,7 @@ class SimulatedExecutor:
     def set_current_date(self, trade_date: date) -> None:
         """引擎在每个交易日开始时调用，设置当前处理日期。"""
         self._current_date = trade_date
+        self._risk.reset_reserved()
 
     def on_signal(self, event: SignalEvent) -> None:
         """处理 SignalEvent：风控 → 股数计算 → 发出 OrderEvent。"""

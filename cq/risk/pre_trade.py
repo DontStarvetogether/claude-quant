@@ -20,6 +20,11 @@ class PreTradeRisk:
     def __init__(self, portfolio: PortfolioManager, config: RiskConfig) -> None:
         self._portfolio = portfolio
         self._config = config
+        self._reserved_cash: float = 0.0  # 当日已通过风控但尚未成交的买入金额
+
+    def reset_reserved(self) -> None:
+        """每个交易日开始时重置预留资金（由执行器调用）。"""
+        self._reserved_cash = 0.0
 
     def check(self, signal: Signal) -> tuple[bool, str]:
         """
@@ -36,32 +41,38 @@ class PreTradeRisk:
         cash = self._portfolio.get_cash()
         pos = self._portfolio.get_position(signal.symbol)
         pos_value = pos.market_value if pos else 0.0
-        
-        # 计算本次买入金额（基于可用现金）
-        buy_amount = self._calc_buy_amount(signal, cash + pos_value)
-        
+
+        # 计算本次买入金额（基于总资产，与执行器保持一致）
+        buy_amount = self._calc_buy_amount(signal, total_assets)
+
         if buy_amount <= 0:
             return False, "买入金额为零（资金不足或量 < 100 股）"
-        
+
         # 单股仓位上限
         new_pct = (pos_value + buy_amount) / total_assets if total_assets > 0 else 1.0
         if new_pct > self._config.max_position_pct:
             return False, (
                 f"单股仓位 {new_pct:.1%} 超过上限 {self._config.max_position_pct:.1%}"
             )
-        
-        # 现金够不够
-        if cash < buy_amount:
-            return False, f"可用现金 {cash:.0f} 不足，需要 {buy_amount:.0f}"
-        
+
+        # 扣除当日已预留现金后的可用资金
+        available_cash = cash - self._reserved_cash
+        if available_cash < buy_amount:
+            return False, (
+                f"可用现金不足（现金 {cash:.0f} - 已预留 {self._reserved_cash:.0f} = "
+                f"{available_cash:.0f}，需要 {buy_amount:.0f}）"
+            )
+
         # 买入后现金储备检查
-        remaining = cash - buy_amount
+        remaining = available_cash - buy_amount
         min_reserve = total_assets * self._config.min_cash_reserve
         if remaining < min_reserve:
             return False, (
                 f"买入后现金 {remaining:.0f} 低于最低储备 {min_reserve:.0f}"
             )
-        
+
+        # 通过风控，预留该笔资金（防止同日其他信号双花）
+        self._reserved_cash += buy_amount
         return True, ""
 
     def _check_sell(self, signal: Signal) -> tuple[bool, str]:

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>策略库 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-100 font-medium">策略库</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold text-gray-100 mb-1">策略库</h1>
+      <p class="text-sm text-gray-500">内置量化策略，点击"开始回测"直接使用</p>
+    </div>
+
+    <!-- 策略卡片列表 -->
+    <div id="strategy-list" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="text-gray-600 text-sm col-span-2">加载中...</div>
+    </div>
+
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script>
+    // 每个策略的扩展元数据（API 返回的基础信息之上补充）
+    const STRATEGY_EXTRA = {
+      double_ma: {
+        tags: ['趋势跟随', '均线系统', '初学者友好'],
+        logic: [
+          '计算快线（默认5日）和慢线（默认20日）移动平均线',
+          '金叉（快线上穿慢线）时买入，建仓 90% 仓位',
+          '死叉（快线下穿慢线）时卖出，全部清仓',
+          '当日涨停则跳过买入信号',
+        ],
+        suitable: '趋势明显的单股行情，震荡市表现较差',
+        risk: '均线系统有滞后性，在震荡行情中频繁买卖会产生较多亏损',
+      },
+    };
+
+    async function load() {
+      const { strategies } = await API.getStrategies();
+      const container = document.getElementById('strategy-list');
+      container.innerHTML = '';
+
+      if (!strategies.length) {
+        container.innerHTML = '<p class="text-gray-600 text-sm col-span-2">暂无策略</p>';
+        return;
+      }
+
+      strategies.forEach(s => {
+        const extra = STRATEGY_EXTRA[s.id] || {};
+        const tags = extra.tags || [];
+        const logic = extra.logic || [];
+        const card = document.createElement('div');
+        card.className = 'bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col gap-5';
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-base font-semibold text-gray-100">${s.name}</h2>
+              <p class="text-sm text-gray-500 mt-1">${s.description}</p>
+            </div>
+            <a href="/?strategy=${s.id}"
+               class="shrink-0 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors">
+              开始回测
+            </a>
+          </div>
+
+          ${tags.length ? `
+          <div class="flex gap-2 flex-wrap">
+            ${tags.map(t => `<span class="px-2 py-0.5 bg-gray-800 rounded-full text-xs text-gray-400">${t}</span>`).join('')}
+          </div>` : ''}
+
+          ${logic.length ? `
+          <div>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">策略逻辑</p>
+            <ol class="space-y-1.5">
+              ${logic.map((l, i) => `
+                <li class="flex gap-2 text-sm text-gray-300">
+                  <span class="shrink-0 w-5 h-5 rounded-full bg-gray-800 text-gray-500 text-xs flex items-center justify-center">${i + 1}</span>
+                  <span>${l}</span>
+                </li>`).join('')}
+            </ol>
+          </div>` : ''}
+
+          ${s.params.length ? `
+          <div>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">可调参数</p>
+            <div class="grid grid-cols-2 gap-2">
+              ${s.params.map(p => `
+                <div class="bg-gray-800 rounded-lg px-3 py-2">
+                  <p class="text-xs text-gray-500">${p.label}</p>
+                  <p class="text-sm text-gray-200 font-medium mt-0.5">
+                    默认 ${p.default}
+                    ${p.min != null ? `<span class="text-xs text-gray-600 ml-1">(${p.min}–${p.max})</span>` : ''}
+                  </p>
+                </div>`).join('')}
+            </div>
+          </div>` : ''}
+
+          ${extra.suitable || extra.risk ? `
+          <div class="border-t border-gray-800 pt-4 space-y-2">
+            ${extra.suitable ? `
+            <div class="flex gap-2 text-sm">
+              <span class="text-green-400 shrink-0">适合：</span>
+              <span class="text-gray-400">${extra.suitable}</span>
+            </div>` : ''}
+            ${extra.risk ? `
+            <div class="flex gap-2 text-sm">
+              <span class="text-yellow-400 shrink-0">注意：</span>
+              <span class="text-gray-400">${extra.risk}</span>
+            </div>` : ''}
+          </div>` : ''}
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    load().catch(e => {
+      document.getElementById('strategy-list').innerHTML =
+        `<p class="text-red-400 text-sm col-span-2">加载失败：${e.message}</p>`;
+    });
+  </script>
+</body>
+</html>

@@ -78,6 +78,7 @@ class PaperExecutor:
 
     def set_current_date(self, trade_date: date) -> None:
         self._current_date = trade_date
+        self._risk.reset_reserved()
 
     def on_signal(self, event: SignalEvent) -> None:
         """处理 SignalEvent：风控 → 计算股数 → 模拟成交 → event_queue。"""
