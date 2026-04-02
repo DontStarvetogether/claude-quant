@@ -83,3 +83,8 @@ async def strategies_page():
 @app.get("/data.html", include_in_schema=False)
 async def data_page():
     return FileResponse(STATIC_DIR / "data.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/compare.html", include_in_schema=False)
+async def compare_page():
+    return FileResponse(STATIC_DIR / "compare.html", headers=_NO_CACHE_HEADERS)

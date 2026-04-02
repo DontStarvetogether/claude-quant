@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>策略对比 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+      <a href="/compare.html" class="text-gray-100 font-medium">策略对比</a>
+    </nav>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100 mb-1">策略对比</h1>
+      <p class="text-sm text-gray-500">相同标的和时间区间，横向对比多个策略的表现</p>
+    </div>
+
+    <!-- 配置区 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+      <h2 class="text-sm font-semibold text-gray-300">回测配置（所有策略共用）</h2>
+
+      <!-- 股票代码 -->
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">股票代码</label>
+        <div class="flex gap-2 mb-2">
+          <input id="symbol-input" type="text" placeholder="如 600519.SH，回车添加"
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+          <button id="add-symbol-btn" type="button"
+            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">添加</button>
+        </div>
+        <div id="symbol-tags" class="flex flex-wrap gap-2 min-h-6"></div>
+      </div>
+
+      <!-- 日期 + 资金 -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">开始日期</label>
+          <input id="start-date" type="date"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">结束日期</label>
+          <input id="end-date" type="date"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm text-gray-400 mb-1">初始资金（元）</label>
+          <input id="initial-capital" type="number" value="1000000" min="10000" step="10000"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+      </div>
+
+      <!-- 策略列表 -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-sm text-gray-400">参与对比的策略</label>
+          <button id="add-strategy-btn" type="button"
+            class="text-xs text-blue-400 hover:text-blue-300 transition-colors">+ 添加策略</button>
+        </div>
+        <div id="strategy-rows" class="space-y-3"></div>
+      </div>
+
+      <div id="form-error" class="hidden text-red-400 text-sm px-3 py-2 bg-red-900/30 rounded-lg border border-red-800"></div>
+
+      <button id="run-btn"
+        class="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        开始对比
+      </button>
+    </section>
+
+    <!-- 进度区 -->
+    <section id="progress-section" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-4">运行进度</h2>
+      <div id="progress-rows" class="space-y-3"></div>
+    </section>
+
+    <!-- 结果区 -->
+    <section id="result-section" class="hidden space-y-6">
+
+      <!-- 权益曲线对比 -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">权益曲线对比（收益率 %）</h2>
+        <div id="compare-chart" style="height:380px;"></div>
+      </div>
+
+      <!-- 指标对比表 -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">指标对比</h2>
+        <div class="overflow-x-auto">
+          <table id="metrics-table" class="w-full text-sm"></table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script>
+  // ── 调色板 ────────────────────────────────────────────────────────────────
+  const COLORS = ['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#4ade80'];
+
+  // ── 状态 ──────────────────────────────────────────────────────────────────
+  let allStrategies = [];       // 从 API 拿到的策略定义
+  let selectedSymbols = new Set();
+  let strategyRows = [];        // [{ id, color, params:{} }]
+  let rowCounter = 0;
+
+  // ── 初始化 ────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    initDates();
+    allStrategies = (await API.getStrategies()).strategies;
+    addStrategyRow();  // 默认添加一行
+    addStrategyRow();  // 再加一行，方便直接对比
+    setupSymbolInput();
+    document.getElementById('add-strategy-btn').addEventListener('click', addStrategyRow);
+    document.getElementById('run-btn').addEventListener('click', runAll);
+  });
+
+  function initDates() {
+    const today = new Date();
+    const threeYearsAgo = new Date(today);
+    threeYearsAgo.setFullYear(today.getFullYear() - 3);
+    document.getElementById('end-date').value = today.toISOString().slice(0, 10);
+    document.getElementById('start-date').value = threeYearsAgo.toISOString().slice(0, 10);
+  }
+
+  // ── 股票输入 ──────────────────────────────────────────────────────────────
+  function setupSymbolInput() {
+    const input = document.getElementById('symbol-input');
+    const btn = document.getElementById('add-symbol-btn');
+    const add = () => {
+      const sym = input.value.trim().toUpperCase();
+      if (!sym) return;
+      if (!/^\d{6}\.(SH|SZ|BJ)$/i.test(sym)) {
+        showError(`格式不正确：${sym}（期望如 600519.SH）`); return;
+      }
+      selectedSymbols.add(sym);
+      renderSymbolTags();
+      input.value = '';
+    };
+    btn.addEventListener('click', add);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  }
+
+  function renderSymbolTags() {
+    const c = document.getElementById('symbol-tags');
+    c.innerHTML = [...selectedSymbols].map(sym => `
+      <span class="inline-flex items-center gap-1 px-3 py-1 bg-blue-900/40 border border-blue-700/50 rounded-full text-xs text-blue-300">
+        ${sym}
+        <button onclick="selectedSymbols.delete('${sym}');renderSymbolTags()" class="text-blue-500 hover:text-red-400 ml-1">×</button>
+      </span>`).join('');
+  }
+
+  // ── 策略行 ────────────────────────────────────────────────────────────────
+  function addStrategyRow() {
+    if (strategyRows.length >= COLORS.length) return;
+    const rowId = ++rowCounter;
+    const color = COLORS[strategyRows.length];
+    const defaultStrategy = allStrategies[strategyRows.length % allStrategies.length];
+    strategyRows.push({ rowId, color, strategyId: defaultStrategy?.id });
+
+    const container = document.getElementById('strategy-rows');
+    const div = document.createElement('div');
+    div.id = `row-${rowId}`;
+    div.className = 'bg-gray-800 rounded-xl p-4 space-y-3';
+    div.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="w-3 h-3 rounded-full shrink-0" style="background:${color}"></span>
+        <select data-row="${rowId}" class="strategy-select flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+          ${allStrategies.map(s => `<option value="${s.id}" ${s.id === defaultStrategy?.id ? 'selected' : ''}>${s.name}</option>`).join('')}
+        </select>
+        <button data-row="${rowId}" class="remove-row-btn text-gray-600 hover:text-red-400 transition-colors text-lg leading-none">×</button>
+      </div>
+      <div data-row-params="${rowId}" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    `;
+    container.appendChild(div);
+
+    div.querySelector('.strategy-select').addEventListener('change', e => {
+      const r = strategyRows.find(r => r.rowId == e.target.dataset.row);
+      if (r) r.strategyId = e.target.value;
+      renderRowParams(rowId, e.target.value);
+    });
+    div.querySelector('.remove-row-btn').addEventListener('click', e => {
+      const rid = parseInt(e.target.dataset.row);
+      strategyRows = strategyRows.filter(r => r.rowId !== rid);
+      document.getElementById(`row-${rid}`).remove();
+    });
+
+    renderRowParams(rowId, defaultStrategy?.id);
+  }
+
+  function renderRowParams(rowId, strategyId) {
+    const strategy = allStrategies.find(s => s.id === strategyId);
+    const container = document.querySelector(`[data-row-params="${rowId}"]`);
+    if (!strategy || !strategy.params.length) { container.innerHTML = ''; return; }
+
+    container.innerHTML = strategy.params.map(p => `
+      <div>
+        <label class="flex justify-between text-xs text-gray-500 mb-1">
+          <span>${p.label}</span>
+          <span id="p-${rowId}-${p.name}-lbl">${p.default}</span>
+        </label>
+        <input id="p-${rowId}-${p.name}"
+          data-row="${rowId}" data-param="${p.name}" data-type="${p.type}"
+          type="range" min="${p.min ?? 1}" max="${p.max ?? 100}" step="${p.step ?? 1}" value="${p.default}"
+          class="w-full accent-blue-500" />
+      </div>`).join('');
+
+    container.querySelectorAll('input[type=range]').forEach(inp => {
+      const lbl = document.getElementById(`p-${rowId}-${inp.dataset.param}-lbl`);
+      inp.addEventListener('input', () => { lbl.textContent = inp.value; });
+    });
+  }
+
+  function getRowParams(rowId) {
+    const params = {};
+    document.querySelectorAll(`[data-row="${rowId}"][data-param]`).forEach(el => {
+      const t = el.dataset.type;
+      params[el.dataset.param] = t === 'int' ? parseInt(el.value) : t === 'float' ? parseFloat(el.value) : el.value;
+    });
+    return params;
+  }
+
+  // ── 运行全部 ──────────────────────────────────────────────────────────────
+  async function runAll() {
+    clearError();
+    if (selectedSymbols.size === 0) { showError('请至少添加一只股票代码'); return; }
+    if (strategyRows.length === 0) { showError('请至少添加一个策略'); return; }
+    if (strategyRows.length < 2) { showError('请添加至少两个策略进行对比'); return; }
+
+    const symbols = [...selectedSymbols];
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    const capital = parseFloat(document.getElementById('initial-capital').value);
+
+    document.getElementById('run-btn').disabled = true;
+    document.getElementById('run-btn').textContent = '运行中...';
+    document.getElementById('result-section').classList.add('hidden');
+    document.getElementById('progress-section').classList.remove('hidden');
+
+    // 初始化进度行
+    const progressRows = document.getElementById('progress-rows');
+    progressRows.innerHTML = strategyRows.map(r => {
+      const strat = allStrategies.find(s => s.id === r.strategyId);
+      return `
+        <div id="prog-${r.rowId}" class="space-y-1">
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${r.color}"></span>
+              <span class="text-gray-300">${strat?.name ?? r.strategyId}</span>
+            </div>
+            <span id="prog-${r.rowId}-status" class="text-gray-500">等待中</span>
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-1">
+            <div id="prog-${r.rowId}-bar" class="h-1 rounded-full transition-all duration-300" style="width:0%;background:${r.color}"></div>
+          </div>
+          <p id="prog-${r.rowId}-detail" class="text-xs text-gray-600"></p>
+        </div>`;
+    }).join('');
+
+    // 顺序运行每个策略
+    const results = [];
+    for (const row of strategyRows) {
+      const strat = allStrategies.find(s => s.id === row.strategyId);
+      const params = getRowParams(row.rowId);
+
+      setRowStatus(row.rowId, '运行中', row.color);
+
+      try {
+        const { run_id } = await API.runBacktest({
+          strategy_id: row.strategyId,
+          symbols,
+          start_date: startDate,
+          end_date: endDate,
+          initial_capital: capital,
+          strategy_params: params,
+          risk: { max_position_pct: 0.95, min_cash_reserve: 0.05 },
+        });
+
+        await waitForCompletion(run_id, row.rowId, row.color);
+        const result = await API.getResult(run_id);
+        results.push({ row, run_id, result, name: strat?.name ?? row.strategyId });
+        setRowStatus(row.rowId, '完成', row.color);
+      } catch (e) {
+        setRowStatus(row.rowId, `失败: ${e.message}`, '#f87171');
+      }
+    }
+
+    document.getElementById('run-btn').disabled = false;
+    document.getElementById('run-btn').textContent = '重新对比';
+
+    if (results.length >= 1) renderResults(results);
+  }
+
+  function setRowStatus(rowId, text, color) {
+    const el = document.getElementById(`prog-${rowId}-status`);
+    if (el) { el.textContent = text; el.style.color = color; }
+  }
+
+  function waitForCompletion(runId, rowId, color) {
+    return new Promise((resolve, reject) => {
+      const sse = new EventSource(`/api/backtest/${runId}/stream`);
+
+      sse.addEventListener('progress', e => {
+        const d = JSON.parse(e.data);
+        const pct = d.progress || 0;
+        const bar = document.getElementById(`prog-${rowId}-bar`);
+        const detail = document.getElementById(`prog-${rowId}-detail`);
+        if (bar) bar.style.width = pct + '%';
+        if (detail) detail.textContent = d.current_date || '';
+      });
+
+      sse.addEventListener('completed', e => {
+        sse.close();
+        const bar = document.getElementById(`prog-${rowId}-bar`);
+        if (bar) bar.style.width = '100%';
+        resolve();
+      });
+
+      sse.addEventListener('error', e => {
+        sse.close();
+        try {
+          const d = JSON.parse(e.data);
+          reject(new Error(d.message || '回测失败'));
+        } catch { reject(new Error('回测失败')); }
+      });
+
+      sse.onerror = () => {
+        sse.close();
+        // SSE 断开后轮询兜底
+        pollCompletion(runId, rowId).then(resolve).catch(reject);
+      };
+    });
+  }
+
+  async function pollCompletion(runId, rowId) {
+    while (true) {
+      await sleep(1500);
+      const s = await API.getStatus(runId);
+      const bar = document.getElementById(`prog-${rowId}-bar`);
+      if (bar) bar.style.width = (s.progress || 0) + '%';
+      if (s.status === 'completed') return;
+      if (s.status === 'failed') throw new Error(s.error || '回测失败');
+    }
+  }
+
+  // ── 渲染结果 ──────────────────────────────────────────────────────────────
+  function renderResults(results) {
+    document.getElementById('result-section').classList.remove('hidden');
+    renderCompareChart(results);
+    renderMetricsTable(results);
+  }
+
+  function renderCompareChart(results) {
+    const chart = echarts.init(document.getElementById('compare-chart'), null, { renderer: 'canvas' });
+
+    // 找最长的 dates 序列作为 x 轴（各策略 dates 可能略有不同）
+    const allDates = results.reduce((max, r) =>
+      r.result.equity_curve.dates.length > max.length ? r.result.equity_curve.dates : max, []);
+
+    const series = results.map(r => {
+      const dates = r.result.equity_curve.dates;
+      const values = r.result.equity_curve.values;
+      const initial = values[0] || 1;
+      // 转为收益率 %，与 x 轴（allDates）对齐
+      const dateIdx = Object.fromEntries(dates.map((d, i) => [d, i]));
+      const data = allDates.map(d => {
+        const i = dateIdx[d];
+        if (i === undefined) return null;
+        return +((values[i] / initial - 1) * 100).toFixed(2);
+      });
+      return {
+        name: r.name,
+        type: 'line',
+        data,
+        smooth: false,
+        symbol: 'none',
+        lineStyle: { color: r.row.color, width: 1.5 },
+        itemStyle: { color: r.row.color },
+        emphasis: { disabled: true },
+      };
+    });
+
+    // 零线
+    const zeroLine = {
+      name: '基准（0%）',
+      type: 'line',
+      data: allDates.map(() => 0),
+      symbol: 'none',
+      lineStyle: { color: '#374151', width: 1, type: 'dashed' },
+      itemStyle: { color: '#374151' },
+      tooltip: { show: false },
+    };
+
+    chart.setOption({
+      backgroundColor: 'transparent',
+      grid: { left: 60, right: 30, top: 30, bottom: 60 },
+      xAxis: {
+        type: 'category', data: allDates,
+        axisLine: { lineStyle: { color: '#374151' } },
+        axisLabel: { color: '#6b7280', fontSize: 10 },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#6b7280', fontSize: 10, formatter: v => v.toFixed(0) + '%' },
+        splitLine: { lineStyle: { color: '#1f2937' } },
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: '#1f2937', borderColor: '#374151',
+        textStyle: { color: '#e5e7eb', fontSize: 12 },
+        formatter(params) {
+          const date = params[0]?.axisValue;
+          let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+          params.filter(p => p.seriesName !== '基准（0%）').forEach(p => {
+            if (p.value == null) return;
+            const v = p.value;
+            const color = v >= 0 ? '#34d399' : '#f87171';
+            html += `<div style="display:flex;justify-content:space-between;gap:16px">
+              <span>${p.marker}${p.seriesName}</span>
+              <span style="color:${color};font-weight:600">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>
+            </div>`;
+          });
+          return html;
+        },
+      },
+      legend: {
+        data: results.map(r => r.name),
+        textStyle: { color: '#9ca3af', fontSize: 11 },
+        top: 5,
+      },
+      dataZoom: [
+        { type: 'inside', start: 0, end: 100 },
+        { type: 'slider', height: 20, bottom: 10, borderColor: '#374151', fillerColor: 'rgba(96,165,250,0.1)', textStyle: { color: '#6b7280' } },
+      ],
+      series: [...series, zeroLine],
+    });
+
+    window.addEventListener('resize', () => chart.resize());
+  }
+
+  function renderMetricsTable(results) {
+    const METRICS = [
+      { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
+      { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
+      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(-v), colorFn: () => '#f87171' },
+      { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? '#34d399' : v >= 0 ? '#e5e7eb' : '#f87171' },
+      { key: 'sortino_ratio',   label: '索提诺比率', fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
+      { key: 'calmar_ratio',    label: '卡玛比率',   fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
+      { key: 'win_rate',        label: '胜率',       fmt: v => fmtPct(v), colorFn: v => v >= 0.5 ? '#34d399' : '#f87171' },
+      { key: 'profit_factor',   label: '盈亏比',     fmt: v => v.toFixed(2), colorFn: v => v >= 1 ? '#34d399' : '#f87171' },
+      { key: 'total_trades',    label: '总交易次数', fmt: v => v + ' 笔', colorFn: () => '#e5e7eb' },
+      { key: 'total_fees',      label: '总手续费',   fmt: v => fmtMoney(v), colorFn: () => '#fbbf24' },
+      { key: 'final_value',     label: '最终净值',   fmt: v => fmtMoney(v), colorFn: () => '#e5e7eb' },
+    ];
+
+    const table = document.getElementById('metrics-table');
+
+    // 表头
+    const thead = `<thead><tr class="border-b border-gray-700">
+      <th class="text-left py-2 pr-6 text-xs text-gray-500 font-normal">指标</th>
+      ${results.map(r => `
+        <th class="text-right py-2 px-4 text-xs font-semibold" style="color:${r.row.color}">
+          ${r.name}
+          <a href="/result.html?run_id=${r.run_id}" class="ml-1 text-gray-600 hover:text-gray-400 font-normal" title="查看详情">↗</a>
+        </th>`).join('')}
+    </tr></thead>`;
+
+    // 每行：找最优值高亮
+    const tbody = '<tbody>' + METRICS.map(m => {
+      const vals = results.map(r => r.result.metrics[m.key]);
+      // 找最优值（收益/夏普等越大越好；回撤越小越好）
+      const bestIdx = findBestIdx(m.key, vals);
+
+      const cells = results.map((r, i) => {
+        const v = vals[i];
+        if (v == null) return `<td class="text-right py-2 px-4 text-sm text-gray-600">—</td>`;
+        const color = m.colorFn(v);
+        const isBest = i === bestIdx;
+        return `<td class="text-right py-2 px-4 text-sm font-medium ${isBest ? 'relative' : ''}" style="color:${color}">
+          ${isBest ? `<span class="absolute left-1 top-1/2 -translate-y-1/2 text-yellow-400 text-xs">★</span>` : ''}
+          ${m.fmt(v)}
+        </td>`;
+      }).join('');
+
+      return `<tr class="border-b border-gray-800/60 hover:bg-gray-800/20">
+        <td class="py-2 pr-6 text-sm text-gray-400">${m.label}</td>
+        ${cells}
+      </tr>`;
+    }).join('') + '</tbody>';
+
+    table.innerHTML = thead + tbody;
+  }
+
+  function findBestIdx(key, vals) {
+    const lowerIsBetter = new Set(['max_drawdown', 'total_fees']);
+    const filtered = vals.map((v, i) => ({ v, i })).filter(x => x.v != null);
+    if (!filtered.length) return -1;
+    if (lowerIsBetter.has(key)) {
+      return filtered.reduce((best, x) => x.v < best.v ? x : best).i;
+    }
+    return filtered.reduce((best, x) => x.v > best.v ? x : best).i;
+  }
+
+  // ── 工具函数 ──────────────────────────────────────────────────────────────
+  function fmtPct(v) {
+    if (v == null) return '—';
+    const s = (v * 100).toFixed(2) + '%';
+    return v >= 0 ? '+' + s : s;
+  }
+  function fmtMoney(v) {
+    if (v == null) return '—';
+    return (v / 10000).toFixed(2) + ' 万';
+  }
+  function showError(msg) {
+    const el = document.getElementById('form-error');
+    el.textContent = msg; el.classList.remove('hidden');
+  }
+  function clearError() {
+    document.getElementById('form-error').classList.add('hidden');
+  }
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  </script>
+</body>
+</html>
