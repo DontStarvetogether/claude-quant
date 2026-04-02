@@ -192,7 +192,7 @@ async def get_stats() -> dict:
 @router.get("/symbols")
 async def list_symbol_data(
     page: int = Query(default=0, ge=0, description="页码，从 0 开始"),
-    page_size: int = Query(default=50, ge=1, le=500, description="每页条数"),
+    page_size: int = Query(default=50, ge=1, le=5000, description="每页条数"),
     q: str = Query(default="", description="按 symbol 或名称过滤"),
 ) -> dict:
     """分页返回每只股票的本地数据状态（名称、日期范围、记录数）。"""

@@ -22,6 +22,9 @@ from web.store import RunRecord, run_store
 # 内置策略注册表：strategy_id → Python 类路径
 BUILTIN_STRATEGIES: dict[str, str] = {
     "double_ma": "cq.strategy.examples.double_ma.DoubleMaStrategy",
+    "rsi":       "cq.strategy.examples.rsi.RsiStrategy",
+    "bollinger": "cq.strategy.examples.bollinger.BollingerStrategy",
+    "momentum":  "cq.strategy.examples.momentum.MomentumStrategy",
 }
 
 # 策略元数据（名称、描述、参数定义）
@@ -32,6 +35,35 @@ STRATEGY_METADATA: dict[str, dict] = {
         "params": [
             {"name": "fast", "type": "int", "default": 5, "label": "快线周期", "min": 2, "max": 50, "step": 1},
             {"name": "slow", "type": "int", "default": 20, "label": "慢线周期", "min": 5, "max": 200, "step": 1},
+        ],
+    },
+    "rsi": {
+        "name": "RSI 策略",
+        "description": "RSI 超卖时买入，超买时卖出（均值回归）",
+        "params": [
+            {"name": "period",       "type": "int",   "default": 14,  "label": "RSI 周期",   "min": 5,  "max": 60,  "step": 1},
+            {"name": "oversold",     "type": "float", "default": 30,  "label": "超卖阈值",   "min": 10, "max": 40,  "step": 1},
+            {"name": "overbought",   "type": "float", "default": 70,  "label": "超买阈值",   "min": 60, "max": 90,  "step": 1},
+            {"name": "position_pct", "type": "float", "default": 0.9, "label": "仓位比例",   "min": 0.1,"max": 1.0, "step": 0.1},
+        ],
+    },
+    "bollinger": {
+        "name": "布林带策略",
+        "description": "价格触及下轨买入，触及上轨卖出（均值回归）",
+        "params": [
+            {"name": "period",       "type": "int",   "default": 20,  "label": "均线周期",   "min": 5,  "max": 60,  "step": 1},
+            {"name": "std_dev",      "type": "float", "default": 2.0, "label": "标准差倍数", "min": 1.0,"max": 3.0, "step": 0.5},
+            {"name": "position_pct", "type": "float", "default": 0.9, "label": "仓位比例",   "min": 0.1,"max": 1.0, "step": 0.1},
+        ],
+    },
+    "momentum": {
+        "name": "动量策略",
+        "description": "N 日涨幅超阈值买入，跌破阈值卖出（趋势跟随）",
+        "params": [
+            {"name": "lookback",        "type": "int",   "default": 20,   "label": "回看天数",   "min": 5,   "max": 60,  "step": 1},
+            {"name": "buy_threshold",   "type": "float", "default": 0.05, "label": "买入阈值",   "min": 0.01,"max": 0.3, "step": 0.01},
+            {"name": "sell_threshold",  "type": "float", "default": -0.05,"label": "卖出阈值",   "min": -0.3,"max": -0.01,"step": 0.01},
+            {"name": "position_pct",    "type": "float", "default": 0.9,  "label": "仓位比例",   "min": 0.1, "max": 1.0, "step": 0.1},
         ],
     },
 }

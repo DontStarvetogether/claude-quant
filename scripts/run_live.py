@@ -37,8 +37,14 @@ from cq.utils.config import Config
 # ── 已注册的策略（在此处添加你自己的策略）────────────────────────────────────────
 def _get_strategy_registry() -> dict[str, type[Strategy]]:
     from cq.strategy.examples.double_ma import DoubleMaStrategy
+    from cq.strategy.examples.rsi import RsiStrategy
+    from cq.strategy.examples.bollinger import BollingerStrategy
+    from cq.strategy.examples.momentum import MomentumStrategy
     return {
         "double_ma": DoubleMaStrategy,
+        "rsi":       RsiStrategy,
+        "bollinger": BollingerStrategy,
+        "momentum":  MomentumStrategy,
     }
 
 

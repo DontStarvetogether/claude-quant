@@ -318,7 +318,7 @@
       try {
         const data = await fetchSymbols(0, '');
         // 获取全量 symbol 列表（不分页）
-        const allRes = await fetch(`/api/data/symbols?page=0&page_size=9999`);
+        const allRes = await fetch(`/api/data/symbols?page=0&page_size=5000`);
         const allData = await allRes.json();
         const symbols = allData.items.map(i => i.symbol);
 
