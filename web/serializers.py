@@ -51,7 +51,15 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         final_cash = current_cash
         final_value = _safe_float(m.final_value) or 0.0
         final_position_value = max(0.0, final_value - final_cash)
-
+    
+    # 计算总佣金和总印花税
+    total_commission = 0.0
+    total_stamp_tax = 0.0
+    if result.trades:
+        for t in result.trades:
+            total_commission += t.commission
+            total_stamp_tax += t.stamp_tax
+    
     metrics = MetricsDict(
         total_return=_safe_float(m.total_return) or 0.0,
         annual_return=_safe_float(m.annual_return) or 0.0,
@@ -67,6 +75,8 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         profit_factor=_safe_float(m.profit_factor),
         avg_hold_days=_safe_float(m.avg_hold_days) or 0.0,
         total_fees=_safe_float(m.total_fees) or 0.0,
+        total_commission=round(total_commission, 2),
+        total_stamp_tax=round(total_stamp_tax, 2),
         final_value=_safe_float(m.final_value) or 0.0,
         final_cash=round(final_cash, 2),
         final_position_value=round(final_position_value, 2),

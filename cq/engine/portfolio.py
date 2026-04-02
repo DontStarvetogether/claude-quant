@@ -123,6 +123,37 @@ class PortfolioManager:
             return pos.last_price
         return self._market_prices.get(symbol)
 
+    def sync_from_broker(
+        self,
+        cash: float,
+        positions: list[dict],
+    ) -> None:
+        """
+        从券商同步账户状态（实盘专用）。
+
+        覆盖本地 cash 和持仓，以券商数据为准。
+        positions 每项格式：
+            {
+                "symbol": str,
+                "total_qty": int,
+                "tradeable_qty": int,
+                "avg_cost": float,
+                "last_price": float,
+            }
+        """
+        self._account.cash = cash
+        self._account.positions.clear()
+        for p in positions:
+            symbol = p["symbol"]
+            pos = Position(symbol=symbol)
+            pos.total_qty = int(p["total_qty"])
+            pos.tradeable_qty = int(p["tradeable_qty"])
+            pos.avg_cost = float(p.get("avg_cost", 0.0))
+            pos.last_price = float(p.get("last_price", 0.0))
+            if pos.total_qty > 0:
+                self._account.positions[symbol] = pos
+                self._market_prices[symbol] = pos.last_price
+
     def snapshot(self) -> AccountSnapshot:
         """返回账户完整快照（不可变），供 PerformanceTracker 记录。"""
         return self._account.snapshot()

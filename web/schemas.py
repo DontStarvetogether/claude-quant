@@ -87,6 +87,8 @@ class MetricsDict(BaseModel):
     profit_factor: float
     avg_hold_days: float
     total_fees: float
+    total_commission: float  # 总佣金
+    total_stamp_tax: float  # 总印花税
     final_value: float
     final_cash: float  # 最终持有现金
     final_position_value: float  # 最终持仓市值

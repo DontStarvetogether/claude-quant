@@ -65,6 +65,7 @@
       <div class="metric-card">
         <p class="metric-label">总手续费</p>
         <p id="m-total-fees" class="metric-value text-yellow-400">—</p>
+        <p id="m-fees-breakdown" class="text-xs text-gray-500 mt-1">—</p>
       </div>
     </section>
 
@@ -72,6 +73,13 @@
     <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <h2 class="text-sm font-semibold text-gray-300 mb-4">权益曲线 & 回撤</h2>
       <div id="equity-chart" style="height: 360px;"></div>
+    </section>
+
+    <!-- 月度收益 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-1">月度收益</h2>
+      <div id="monthly-bar-chart" style="height:180px;"></div>
+      <div id="monthly-heatmap" class="mt-4 overflow-x-auto"></div>
     </section>
 
     <!-- 下方两栏：详细指标 + 成交记录 -->
@@ -119,6 +127,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/result.js?v=7"></script>
+  <script src="/static/js/result.js?v=10"></script>
 </body>
 </html>

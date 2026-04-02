@@ -52,6 +52,16 @@ class RiskConfig:
 
 
 @dataclass
+class LiveConfig:
+    """实盘相关配置（QMT）。"""
+    account_id: str = ""
+    mini_qmt_dir: str = "C:/国金证券QMT交易端/userdata_mini"
+    bar_period: str = "1d"     # 行情周期："1d" 日线，"1m" 分钟线
+    history_days: int = 300    # 预加载历史天数（用于策略指标计算）
+    session_id: int = 1        # QMT session_id（同一账号多个策略时需区分）
+
+
+@dataclass
 class LoggingConfig:
     level: str = "INFO"
     file: Optional[str] = None
@@ -63,6 +73,7 @@ class Config:
     engine: EngineConfig = field(default_factory=EngineConfig)
     data: DataConfig = field(default_factory=DataConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    live: LiveConfig = field(default_factory=LiveConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @classmethod
@@ -98,6 +109,11 @@ class Config:
             for k, v in risk_raw.items():
                 if hasattr(cfg.risk, k):
                     setattr(cfg.risk, k, v)
+
+        if live_raw := raw.get("live"):
+            for k, v in live_raw.items():
+                if hasattr(cfg.live, k):
+                    setattr(cfg.live, k, v)
 
         if log_raw := raw.get("logging"):
             for k, v in log_raw.items():

@@ -20,6 +20,13 @@ risk:
   min_cash_reserve: 0.05           # 最低现金储备（占总资产）
   max_daily_trades: 50             # 单日最大交易笔数
 
+live:
+  account_id: ""                   # 券商资金账号（必填，如 "1234567890"）
+  mini_qmt_dir: "C:/国金证券QMT交易端/userdata_mini"  # QMT 数据目录（按实际修改）
+  bar_period: "1d"                 # 行情周期：1d=日线，1m=分钟线
+  history_days: 300                # 预加载历史天数（供策略计算指标用）
+  session_id: 1                    # QMT session_id（同账号多策略时需区分）
+
 logging:
   level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
   file: null                       # null=只输出控制台，填路径则同时写文件

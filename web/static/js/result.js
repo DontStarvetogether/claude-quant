@@ -59,7 +59,8 @@ function renderPage(data) {
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
   renderMetricCards(data.metrics);
-  renderEquityChart(data.equity_curve, data.metrics);
+  renderEquityChart(data.equity_curve, data.metrics, data.trades);
+  renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics);
   renderTradesTable(data.trades);
 
@@ -80,7 +81,7 @@ function renderMetricCards(m) {
   const totalRet = m.total_return;
   set('m-total-return', Fmt.pct(totalRet), Fmt.colorClass(totalRet));
   set('m-annual-return', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return));
-  set('m-max-drawdown', Fmt.pct(m.max_drawdown), 'negative');
+  set('m-max-drawdown', Fmt.pct(-m.max_drawdown), 'negative');
   set('m-sharpe', Fmt.num(m.sharpe_ratio, 3));
   set('m-win-rate', Fmt.pct(m.win_rate, 1));
   set('m-total-trades', m.total_trades + ' 笔');
@@ -93,10 +94,16 @@ function renderMetricCards(m) {
   }
   
   set('m-total-fees', Fmt.money(m.total_fees));
+  
+  // 显示佣金和印花税的拆分
+  if (m.total_commission !== undefined && m.total_stamp_tax !== undefined) {
+    const feesBreakdown = `佣金 ${Fmt.money(m.total_commission)} + 印花税 ${Fmt.money(m.total_stamp_tax)}`;
+    set('m-fees-breakdown', feesBreakdown);
+  }
 }
 
 // ── 权益曲线图 ─────────────────────────────────────────────────────────────────
-function renderEquityChart(curve, metrics) {
+function renderEquityChart(curve, metrics, trades = []) {
   const chart = echarts.init(document.getElementById('equity-chart'), null, { renderer: 'canvas' });
 
   const ddStart = metrics.max_drawdown_start;
@@ -155,6 +162,11 @@ function renderEquityChart(curve, metrics) {
         lineStyle: { color: '#3b82f6', width: 1.5 },
         areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.2)' }, { offset: 1, color: 'rgba(59,130,246,0)' }] } },
         markArea,
+        markPoint: {
+          symbolSize: 14,
+          label: { show: false },
+          data: _buildTradeMarkers(trades, curve),
+        },
       },
       {
         name: '回撤%',
@@ -180,7 +192,7 @@ function renderDetailMetrics(m) {
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
     ['年化收益率', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return)],
-    ['最大回撤', Fmt.pct(m.max_drawdown), 'negative'],
+    ['最大回撤', Fmt.pct(-m.max_drawdown), 'negative'],
     ['回撤区间', m.max_drawdown_start ? `${m.max_drawdown_start} → ${m.max_drawdown_end}` : '—', ''],
     ['年化波动率', Fmt.pct(m.volatility, 2), ''],
     ['夏普比率', Fmt.num(m.sharpe_ratio, 4), ''],
@@ -241,6 +253,132 @@ function renderTradesTable(trades) {
     `共 ${trades.length} 笔成交，` +
     `买入 ${trades.filter(t => t.side === 'BUY').length} 笔，` +
     `卖出 ${trades.filter(t => t.side === 'SELL').length} 笔`;
+}
+
+// ── 买卖点标记 ────────────────────────────────────────────────────────────────
+function _buildTradeMarkers(trades, curve) {
+  const dateToVal = {};
+  curve.dates.forEach((d, i) => { dateToVal[d] = curve.values[i]; });
+
+  return trades.map(t => {
+    const y = dateToVal[t.trade_date];
+    if (y === undefined) return null;
+    const isBuy = t.side === 'BUY';
+    return {
+      coord: [t.trade_date, y],
+      symbol: 'triangle',
+      symbolRotate: isBuy ? 0 : 180,
+      itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+    };
+  }).filter(Boolean);
+}
+
+// ── 月度收益 ──────────────────────────────────────────────────────────────────
+function renderMonthlyReturns(curve) {
+  const monthly = _computeMonthlyReturns(curve);
+  if (!monthly.length) return;
+
+  // 柱状图
+  const barChart = echarts.init(document.getElementById('monthly-bar-chart'), null, { renderer: 'canvas' });
+  barChart.setOption({
+    backgroundColor: 'transparent',
+    grid: { left: 48, right: 12, top: 16, bottom: 48 },
+    xAxis: {
+      type: 'category',
+      data: monthly.map(m => m.ym),
+      axisLabel: { color: '#6b7280', fontSize: 9, rotate: 45 },
+      axisLine: { lineStyle: { color: '#374151' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#6b7280', fontSize: 10, formatter: v => v.toFixed(1) + '%' },
+      splitLine: { lineStyle: { color: '#1f2937' } },
+    },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#1f2937',
+      borderColor: '#374151',
+      textStyle: { color: '#e5e7eb', fontSize: 12 },
+      formatter: p => `<b>${p[0].name}</b>：${p[0].value >= 0 ? '+' : ''}${p[0].value.toFixed(2)}%`,
+    },
+    series: [{
+      type: 'bar',
+      barMaxWidth: 24,
+      data: monthly.map(m => ({
+        value: +(m.ret * 100).toFixed(2),
+        itemStyle: { color: m.ret >= 0 ? '#22c55e' : '#ef4444', borderRadius: [2, 2, 0, 0] },
+      })),
+    }],
+  });
+  window.addEventListener('resize', () => barChart.resize());
+
+  // 热力图
+  _renderMonthlyHeatmap(monthly);
+}
+
+function _computeMonthlyReturns(curve) {
+  if (!curve.dates.length) return [];
+
+  // 每月最后一个交易日的净值
+  const lastOfMonth = {};
+  curve.dates.forEach((d, i) => {
+    const ym = d.slice(0, 7);
+    lastOfMonth[ym] = curve.values[i];
+  });
+
+  const yms = Object.keys(lastOfMonth).sort();
+  return yms.map((ym, j) => {
+    const cur = lastOfMonth[ym];
+    const prev = j === 0 ? curve.values[0] : lastOfMonth[yms[j - 1]];
+    return { ym, ret: prev > 0 ? (cur - prev) / prev : 0 };
+  });
+}
+
+function _renderMonthlyHeatmap(monthly) {
+  // 提取年份列表和数据 map
+  const years = [...new Set(monthly.map(m => m.ym.slice(0, 4)))].sort();
+  const dataMap = {};
+  monthly.forEach(m => { dataMap[m.ym] = m.ret; });
+
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  function cellColor(ret) {
+    if (ret === undefined || ret === null) return { bg: '#111827', text: '#4b5563' };
+    if (ret >  0.05) return { bg: '#15803d', text: '#fff' };
+    if (ret >  0.02) return { bg: '#16a34a', text: '#fff' };
+    if (ret >  0.005) return { bg: '#22c55e', text: '#14532d' };
+    if (ret >  0)    return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret === 0)   return { bg: '#1f2937', text: '#9ca3af' };
+    if (ret > -0.005) return { bg: '#fca5a5', text: '#7f1d1d' };
+    if (ret > -0.02) return { bg: '#ef4444', text: '#fff' };
+    if (ret > -0.05) return { bg: '#dc2626', text: '#fff' };
+    return { bg: '#991b1b', text: '#fff' };
+  }
+
+  const headerCells = months.map(m =>
+    `<div style="text-align:center;color:#6b7280;font-size:10px;padding:2px 0">${m}</div>`
+  ).join('');
+
+  const dataRows = years.map(year => {
+    const cells = Array.from({ length: 12 }, (_, i) => {
+      const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
+      const ret = dataMap[ym];
+      const { bg, text } = cellColor(ret);
+      const label = ret !== undefined
+        ? (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%'
+        : '';
+      return `<div style="background:${bg};color:${text};border-radius:3px;padding:3px 2px;text-align:center;font-size:10px;white-space:nowrap" title="${ym} ${label}">${label}</div>`;
+    }).join('');
+    return `
+      <div style="color:#9ca3af;font-size:10px;text-align:right;padding-right:6px;line-height:24px">${year}</div>
+      ${cells}`;
+  }).join('');
+
+  document.getElementById('monthly-heatmap').innerHTML = `
+    <div style="display:grid;grid-template-columns:36px repeat(12,1fr);gap:3px;min-width:520px">
+      <div></div>${headerCells}
+      ${dataRows}
+    </div>`;
 }
 
 // ── 导出 CSV ──────────────────────────────────────────────────────────────────
