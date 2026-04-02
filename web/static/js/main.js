@@ -79,7 +79,14 @@ async function loadStrategies() {
     ).join('');
 
     select.addEventListener('change', () => renderStrategyParams(select.value));
-    renderStrategyParams(strategies[0]?.id);
+
+    // 若 URL 带 ?strategy=xxx 则预选对应策略
+    const preselect = new URLSearchParams(window.location.search).get('strategy');
+    const initId = (preselect && strategies.find(s => s.id === preselect))
+      ? preselect
+      : strategies[0]?.id;
+    select.value = initId;
+    renderStrategyParams(initId);
   } catch (e) {
     console.error('加载策略失败', e);
   }
