@@ -55,10 +55,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupForm();
   await loadSessions();
 
-  // URL hash 路由：自动打开指定会话
-  const hash = window.location.hash.slice(1);
-  if (hash && hash.length >= 8) {
-    setTimeout(() => reconnectSession(hash), 500);
+  // URL 路由：自动打开指定会话（对齐回测页 ?run_id= 格式）
+  const sid = new URLSearchParams(window.location.search).get('session_id');
+  if (sid && sid.length >= 8) {
+    setTimeout(() => reconnectSession(sid), 500);
   }
 });
 
@@ -643,7 +643,7 @@ function updateDashboard(data) {
     // 按日期排序（早→晚）
     const sortedTrades = [...allTrades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
     tradeBody.innerHTML = sortedTrades.map(t => {
-      const sideColor = t.side === 'BUY' ? 'text-red-400' : 'text-green-400';
+      const sideColor = t.side === 'BUY' ? 'text-green-400' : 'text-red-400';
       const sideText = t.side === 'BUY' ? '买入' : '卖出';
       const net = t.side === 'BUY'
         ? -(t.amount + (t.commission || 0))
@@ -931,9 +931,11 @@ async function deleteSession(sessionId) {
 
 async function reconnectSession(sessionId) {
   currentSessionId = sessionId;
-  // URL hash 路由，便于分享和区分
-  if (window.location.hash !== '#' + sessionId) {
-    history.replaceState(null, '', '#' + sessionId);
+  // URL 路由（与回测页对齐：?session_id=xxx）
+  const url = new URL(window.location);
+  if (url.searchParams.get('session_id') !== sessionId) {
+    url.searchParams.set('session_id', sessionId);
+    history.replaceState(null, '', url);
   }
   const st = _ensure(sessionId);
 
@@ -1056,7 +1058,7 @@ function updateEquityChart(trades, eqData) {
         symbol: 'triangle',
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 16,
-        itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
+        itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
         emphasis: { label: { show: true, formatter: label.replace(/\n/g, ' '), position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
       };
     }).filter(Boolean);
