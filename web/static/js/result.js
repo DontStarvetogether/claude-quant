@@ -50,12 +50,15 @@ function renderPage(data) {
   document.getElementById('loading').classList.add('hidden');
   document.getElementById('main-content').classList.remove('hidden');
 
-  // Header：显示股票代码+公司名
+  // Header：截断过长股票列表
+  const symCount = data.symbols.length;
+  const symDisplay = symCount > 5
+    ? data.symbols.slice(0, 5).map(s => STOCK_NAMES[s] ? `${s}(${STOCK_NAMES[s]})` : s).join(', ') + ` ，等 ${symCount} 只`
+    : data.symbols.map(s => STOCK_NAMES[s] ? `${s}(${STOCK_NAMES[s]})` : s).join(', ');
   document.getElementById('header-strategy').textContent = data.strategy_name;
-  document.getElementById('header-symbols').textContent = data.symbols
-    .map(s => STOCK_NAMES[s] ? `${s}(${STOCK_NAMES[s]})` : s)
-    .join(', ');
-  document.getElementById('header-dates').textContent = `${data.start_date} → ${data.end_date}`;
+  document.getElementById('header-symbols').textContent = symDisplay;
+  document.getElementById('header-dates').innerHTML = `${data.start_date} → ${data.end_date}` +
+    (data.rejected_count ? ` &nbsp;<span class="text-xs text-gray-500">拒单 ${data.rejected_count} 次</span>` : '');
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
   renderMetricCards(data.metrics);
@@ -252,7 +255,22 @@ function renderTradesTable(trades) {
   document.getElementById('trades-summary').textContent =
     `共 ${trades.length} 笔成交，` +
     `买入 ${trades.filter(t => t.side === 'BUY').length} 笔，` +
-    `卖出 ${trades.filter(t => t.side === 'SELL').length} 笔`;
+    `卖出 ${trades.filter(t => t.side === 'SELL').length} 笔` +
+    `${resultData?.rejected_count ? `，拒单 ${resultData.rejected_count} 次` : ''}`;
+
+  // 股票筛选
+  const filterInput = document.getElementById('trade-filter');
+  if (filterInput) {
+    filterInput.addEventListener('input', () => {
+      const q = filterInput.value.trim().toLowerCase();
+      const rows = tbody.querySelectorAll('tr');
+      rows.forEach(row => {
+        if (!q) { row.style.display = ''; return; }
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+  }
 }
 
 // ── 买卖点标记 ────────────────────────────────────────────────────────────────

@@ -100,7 +100,11 @@
       <!-- 成交记录 -->
       <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-gray-300">成交记录</h2>
+          <div class="flex items-center gap-3">
+            <h2 class="text-sm font-semibold text-gray-300">成交记录</h2>
+            <input id="trade-filter" type="text" placeholder="筛选股票代码或名称..."
+              class="w-40 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+          </div>
           <button id="export-csv-btn"
             class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
             导出 CSV
@@ -133,6 +137,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/result.js?v=14"></script>
+  <script src="/static/js/result.js?v=15"></script>
 </body>
 </html>
