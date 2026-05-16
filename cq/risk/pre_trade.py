@@ -42,7 +42,7 @@ class PreTradeRisk:
         if signal.side == OrderSide.BUY:
             passed, reason, clamped = self._check_buy(signal)
         else:
-            passed, reason = self._check_sell(signal)
+            passed, reason, _ = self._check_sell(signal)
             clamped = None
 
         if passed:
