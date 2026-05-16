@@ -6,10 +6,22 @@ let strategies = [];
 let allSymbols = [];
 let selectedSymbols = new Set();
 let currentSessionId = null;
-let sseSource = null;
 let equityChart = null;
-let equityData = [];  // { date, total_assets, cash }
 let currentMode = 'paper'; // "paper" | "live"
+
+// 多会话并行：每个 session 独立的状态
+let sessionStates = {};  // { [sid]: { equityData:[], trades:[], metrics:null, sse:EventSource|null, ... } }
+
+function _session(sid) {
+  if (!sid) sid = currentSessionId;
+  if (!sid || !sessionStates[sid]) return null;
+  return sessionStates[sid];
+}
+function _cur() { return _session(currentSessionId); }
+function _ensure(sid) {
+  if (!sessionStates[sid]) sessionStates[sid] = { equityData: [], trades: [], metrics: null, sse: null, lastStatus: null };
+  return sessionStates[sid];
+}
 
 const Fmt = {
   money: v => v == null ? '--' : v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
@@ -324,6 +336,10 @@ function setupForm() {
     if (!currentSessionId) return;
     try {
       await fetch(`/api/live/${currentSessionId}/stop`, { method: 'POST' });
+      // 停止该会话的 SSE
+      const st = _session(currentSessionId);
+      if (st && st.sse) { st.sse.close(); st.sse = null; }
+      document.getElementById('stop-btn').disabled = true;
     } catch (e) {
       console.error('停止失败', e);
     }
@@ -379,7 +395,6 @@ async function startSession() {
   }
 
   const startBtn = document.getElementById('start-btn');
-  const stopBtn = document.getElementById('stop-btn');
   startBtn.disabled = true;
 
   try {
@@ -395,16 +410,16 @@ async function startSession() {
     }
 
     const data = await res.json();
+    _ensure(data.session_id);
     currentSessionId = data.session_id;
-    stopBtn.disabled = false;
+    document.getElementById('stop-btn').disabled = false;
 
-    equityData = [];
     showStatusSection();
     startSSE(currentSessionId);
 
   } catch (e) {
     showError(e.message);
-    startBtn.disabled = false;
+    document.getElementById('start-btn').disabled = false;
   }
 }
 
@@ -417,31 +432,34 @@ function showError(msg) {
 // ── SSE 实时推送 ─────────────────────────────────────────────────────────────
 
 function startSSE(sessionId) {
-  if (sseSource) sseSource.close();
-  sseSource = new EventSource(`/api/live/${sessionId}/stream`);
+  const st = _ensure(sessionId);
+  if (st.sse) st.sse.close();
+  st.sse = new EventSource(`/api/live/${sessionId}/stream`);
 
-  sseSource.addEventListener('status', e => {
+  st.sse.addEventListener('status', e => {
     const data = JSON.parse(e.data);
+    _ensure(sessionId).lastStatus = data;
     updateDashboard(data);
+    refreshSessionsList();
   });
 
-  sseSource.addEventListener('stopped', e => {
+  st.sse.addEventListener('stopped', e => {
     const data = JSON.parse(e.data);
+    _ensure(sessionId).lastStatus = data;
     updateDashboard(data);
-    onSessionEnd('stopped');
+    onSessionEnd(sessionId, 'stopped');
   });
 
-  sseSource.addEventListener('error', e => {
+  st.sse.addEventListener('error', e => {
     if (e.data) {
       const data = JSON.parse(e.data);
       showError(data.error || '会话异常');
     }
-    onSessionEnd('failed');
+    onSessionEnd(sessionId, 'failed');
   });
 
-  sseSource.onerror = () => {
-    // SSE 连接断开，回退到轮询
-    sseSource.close();
+  st.sse.onerror = () => {
+    st.sse.close();
     pollStatus(sessionId);
   };
 }
@@ -452,9 +470,10 @@ async function pollStatus(sessionId) {
     try {
       const res = await fetch(`/api/live/${sessionId}/status`);
       const data = await res.json();
-      updateDashboard(data);
+      _ensure(sessionId).lastStatus = data;
+      if (currentSessionId === sessionId) updateDashboard(data);
       if (data.status === 'stopped' || data.status === 'failed') {
-        onSessionEnd(data.status);
+        onSessionEnd(sessionId, data.status);
         return;
       }
     } catch (e) {
@@ -467,15 +486,16 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-function onSessionEnd(status) {
-  if (sseSource) sseSource.close();
-  sseSource = null;
-  document.getElementById('start-btn').disabled = false;
-  document.getElementById('stop-btn').disabled = true;
+function onSessionEnd(sessionId, status) {
+  const st = _session(sessionId);
+  if (st && st.sse) { st.sse.close(); st.sse = null; }
 
-  const label = document.getElementById('status-label');
-  label.textContent = status === 'stopped' ? '已停止' : '异常';
-  label.className = 'text-sm font-semibold ' + (status === 'stopped' ? 'text-gray-400' : 'text-red-400');
+  if (currentSessionId === sessionId) {
+    document.getElementById('stop-btn').disabled = true;
+    const label = document.getElementById('status-label');
+    label.textContent = status === 'stopped' ? '已停止' : '异常';
+    label.className = 'text-sm font-semibold ' + (status === 'stopped' ? 'text-gray-400' : 'text-red-400');
+  }
 
   loadSessions();
 }
@@ -496,18 +516,29 @@ function showMetricsSection() {
 }
 
 function updateDashboard(data) {
+  const sid = data.session_id || currentSessionId;
+  if (!sid) return;
+  if (currentSessionId !== sid) return; // 只渲染当前查看的会话
+
   showStatusSection();
+
+  const st = _ensure(sid);
+  const eq = st.equityData;
 
   // 追加净值数据点（按日期去重）
   if (data.current_date && data.total_assets != null) {
-    const last = equityData[equityData.length - 1];
+    const last = eq[eq.length - 1];
     if (!last || last.date !== data.current_date) {
-      equityData.push({ date: data.current_date, total_assets: data.total_assets, cash: data.cash || 0 });
+      eq.push({ date: data.current_date, total_assets: data.total_assets, cash: data.cash || 0 });
     } else {
       last.total_assets = data.total_assets;
       last.cash = data.cash || 0;
     }
   }
+
+  // 缓存成交数据
+  if (data.recent_trades) st.trades = data.recent_trades;
+  if (data.metrics) st.metrics = data.metrics;
 
   // 状态卡片
   const statusMap = { starting: '启动中', running: '运行中', stopped: '已停止', failed: '异常' };
@@ -525,12 +556,12 @@ function updateDashboard(data) {
   // 绩效指标卡片 + 月度收益
   if (data.metrics) {
     renderMetricsCards(data.metrics);
-    if (equityData.length > 0) renderMonthlyReturns(equityData);
+    if (eq.length > 0) renderMonthlyReturns(eq);
   }
 
   // 净值图表（传递成交数据用于买卖标记）
   initEquityChart();
-  updateEquityChart(data.recent_trades);
+  updateEquityChart(data.recent_trades, eq);
 
   // 持仓表格
   const posBody = document.getElementById('positions-body');
@@ -738,24 +769,58 @@ async function loadSessions() {
   try {
     const res = await fetch('/api/live/sessions');
     const data = await res.json();
-    const list = document.getElementById('sessions-list');
+    refreshSessionsList(data.sessions);
+  } catch (e) {
+    console.error('加载会话列表失败', e);
+  }
+}
 
-    if (!data.sessions || data.sessions.length === 0) {
+function refreshSessionsList(sessionsOverride) {
+  // 如果没有传入数据，用缓存的状态构造一个简易列表
+  const list = document.getElementById('sessions-list');
+
+  // 先从 API 加载完整列表，再合并活跃内存状态
+  // 这里采用简洁方案：直接用传入的数据渲染
+  Promise.resolve().then(async () => {
+    let sessions;
+    if (sessionsOverride) {
+      sessions = sessionsOverride;
+    } else {
+      try {
+        const res = await fetch('/api/live/sessions');
+        const data = await res.json();
+        sessions = data.sessions || [];
+      } catch (e) { return; }
+    }
+
+    if (!sessions.length) {
       list.innerHTML = '<p class="text-sm text-gray-600">暂无记录</p>';
       return;
     }
 
-    list.innerHTML = data.sessions.map(s => {
+    // 为活跃会话注入内存中的最新状态
+    sessions = sessions.map(s => {
+      const mem = _session(s.session_id);
+      if (mem && mem.lastStatus) {
+        return { ...s, status: mem.lastStatus.status, total_assets: mem.lastStatus.total_assets ?? s.total_assets, elapsed_seconds: mem.lastStatus.elapsed_seconds ?? s.elapsed_seconds };
+      }
+      return s;
+    });
+
+    list.innerHTML = sessions.map(s => {
       const statusMap = { starting: '启动中', running: '运行中', stopped: '已停止', failed: '异常' };
-      const colorMap = { starting: 'bg-yellow-500', running: 'bg-green-500', stopped: 'bg-gray-500', failed: 'bg-red-500' };
+      const isActive = s.status === 'running' || s.status === 'starting';
+      const dotColor = { starting: 'bg-yellow-500', running: 'bg-green-500 animate-pulse', stopped: 'bg-gray-500', failed: 'bg-red-500' };
       const modeLabel = s.mode === 'live' ? '实盘' : '模拟';
       const modeCls = s.mode === 'live'
         ? 'bg-red-900/50 text-red-400 border-red-800'
         : 'bg-blue-900/50 text-blue-400 border-blue-800';
-      return `<div class="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 cursor-pointer hover:border-gray-700 transition-colors"
+      const activeBorder = s.session_id === currentSessionId ? 'border-blue-700' : 'border-gray-800';
+      const elapsedCls = isActive ? 'text-green-400' : 'text-gray-500';
+      return `<div class="flex items-center justify-between bg-gray-900 border ${activeBorder} rounded-lg px-4 py-3 cursor-pointer hover:border-gray-700 transition-colors"
                    onclick="reconnectSession('${s.session_id}')">
         <div class="flex items-center gap-3 min-w-0">
-          <span class="w-2 h-2 rounded-full shrink-0 ${colorMap[s.status] || 'bg-gray-500'}"></span>
+          <span class="w-2 h-2 rounded-full shrink-0 ${dotColor[s.status] || 'bg-gray-500'}"></span>
           <span class="px-1.5 py-0.5 text-[10px] font-medium rounded border shrink-0 ${modeCls}">${modeLabel}</span>
           <span class="text-sm text-gray-200 shrink-0">${s.strategy_id}</span>
           <span class="text-xs text-gray-500 truncate">${s.symbols.join(', ')}</span>
@@ -763,16 +828,14 @@ async function loadSessions() {
         <div class="flex items-center gap-5 shrink-0">
           <span class="text-sm ${s.total_assets ? 'text-green-400' : 'text-gray-500'}">${Fmt.money(s.total_assets)}</span>
           <span class="text-xs text-gray-500" title="启动时间">${Fmt.datetime(s.started_at)}</span>
-          <span class="text-xs ${s.status === 'stopped' ? 'text-gray-400' : 'text-gray-600'}">${Fmt.elapsed(s.elapsed_seconds)}</span>
+          <span class="text-xs ${elapsedCls}">${isActive ? '运行中' : Fmt.elapsed(s.elapsed_seconds)}</span>
           <span class="text-xs text-gray-500">${statusMap[s.status] || s.status}</span>
           <button onclick="event.stopPropagation(); deleteSession('${s.session_id}')"
             class="text-gray-600 hover:text-red-400 transition-colors text-xs px-1" title="删除">✕</button>
         </div>
       </div>`;
     }).join('');
-  } catch (e) {
-    console.error('加载会话列表失败', e);
-  }
+  });
 }
 
 async function deleteSession(sessionId) {
@@ -788,33 +851,45 @@ async function deleteSession(sessionId) {
 
 async function reconnectSession(sessionId) {
   currentSessionId = sessionId;
-  document.getElementById('stop-btn').disabled = false;
-  document.getElementById('start-btn').disabled = true;
+  const st = _ensure(sessionId);
 
-  // 先获取一次当前状态
+  document.getElementById('start-btn').disabled = false;
+  const stopBtn = document.getElementById('stop-btn');
+  stopBtn.disabled = true;
+
+  // 检查是否有缓存的运行状态
+  const cached = st.lastStatus;
+  const isRunning = cached && (cached.status === 'running' || cached.status === 'starting');
+
+  // 先获取当前状态
   try {
     const res = await fetch(`/api/live/${sessionId}/status`);
     const data = await res.json();
-    updateDashboard(data);
 
+    // 只有当前仍在运行的会话才启用停止按钮
     if (data.status === 'running' || data.status === 'starting') {
-      startSSE(sessionId);
-    } else {
-      onSessionEnd(data.status);
+      stopBtn.disabled = false;
+      // 如果还没有 SSE，启动一个
+      if (!st.sse || st.sse.readyState === EventSource.CLOSED) {
+        startSSE(sessionId);
+      }
     }
+
+    updateDashboard(data);
 
     // 加载净值曲线（优先用 status 中携带的完整数据）
     if (data.equity_curve && data.equity_curve.dates && data.equity_curve.dates.length > 0) {
-      equityData = data.equity_curve.dates.map((d, i) => ({
+      st.equityData = data.equity_curve.dates.map((d, i) => ({
         date: d,
         total_assets: data.equity_curve.values[i],
         cash: 0,
         drawdown: data.equity_curve.drawdown ? data.equity_curve.drawdown[i] : 0,
       }));
       initEquityChart();
-      updateEquityChart(data.recent_trades);
-      renderMonthlyReturns(equityData);
-    } else {
+      updateEquityChart(data.recent_trades, st.equityData);
+      renderMonthlyReturns(st.equityData);
+    } else if (data.status === 'running' || data.status === 'starting') {
+      // 正在运行的会话没有完整数据，从 API 加载
       await loadEquityCurve(sessionId);
     }
   } catch (e) {
@@ -833,18 +908,19 @@ function initEquityChart() {
   }
 }
 
-function updateEquityChart(trades) {
-  if (equityData.length === 0) return;
+function updateEquityChart(trades, eqData) {
+  if (!eqData) eqData = _cur()?.equityData || [];
+  if (eqData.length === 0) return;
   document.getElementById('equity-section').classList.remove('hidden');
   initEquityChart();
   equityChart.resize();
 
-  const dates = equityData.map(d => d.date);
-  const assets = equityData.map(d => d.total_assets);
+  const dates = eqData.map(d => d.date);
+  const assets = eqData.map(d => d.total_assets);
   const initialCapital = assets[0] || 1000000;
 
   // 是否有回撤数据
-  const hasDrawdown = equityData.some(d => d.drawdown !== undefined && d.drawdown !== null);
+  const hasDrawdown = eqData.some(d => d.drawdown !== undefined && d.drawdown !== null);
   const grid = hasDrawdown
     ? [
         { left: 60, right: 16, top: 40, height: '55%' },
@@ -908,7 +984,7 @@ function updateEquityChart(trades) {
   ];
 
   if (hasDrawdown) {
-    const dd = equityData.map(d => d.drawdown || 0);
+    const dd = eqData.map(d => d.drawdown || 0);
     series.push({
       name: '回撤', type: 'line', data: dd, smooth: true, symbol: 'none', xAxisIndex: 1, yAxisIndex: 1,
       lineStyle: { width: 1 }, itemStyle: { color: '#f87171' },
@@ -949,9 +1025,10 @@ async function loadEquityCurve(sessionId) {
     const res = await fetch(`/api/live/${sessionId}/equity`);
     const data = await res.json();
     if (data.length > 0) {
-      equityData = data.map(d => ({ date: d.trade_date, total_assets: d.total_assets, cash: d.cash }));
+      const st = _ensure(sessionId);
+      st.equityData = data.map(d => ({ date: d.trade_date, total_assets: d.total_assets, cash: d.cash }));
       initEquityChart();
-      updateEquityChart();
+      updateEquityChart(null, st.equityData);
     }
   } catch (e) {
     console.error('加载净值曲线失败', e);
