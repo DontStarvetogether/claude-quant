@@ -21,7 +21,7 @@ config/local.yaml
 
 # Data（本地数据不提交）
 ~/.cq/
-data/
+/data/
 
 # Test / coverage
 .pytest_cache/
