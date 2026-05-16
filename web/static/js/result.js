@@ -226,7 +226,7 @@ function renderTradesTable(trades) {
   tbody.innerHTML = trades.map(t => {
     const isBuy = t.side === 'BUY';
     const rowClass = isBuy ? 'trade-buy' : 'trade-sell';
-    const sideColor = isBuy ? 'text-green-400' : 'text-red-400';
+    const sideColor = isBuy ? 'text-red-400' : 'text-green-400';
     const companyName = STOCK_NAMES[t.symbol] || '';
     
     return `
@@ -268,7 +268,7 @@ function _buildTradeMarkers(trades, curve) {
       coord: [t.trade_date, y],
       symbol: 'triangle',
       symbolRotate: isBuy ? 0 : 180,
-      itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+      itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
     };
   }).filter(Boolean);
 }

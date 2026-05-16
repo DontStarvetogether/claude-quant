@@ -37,6 +37,7 @@ const Fmt = {
     if (m > 0) return m + '分' + s + '秒';
     return s + '秒';
   },
+  num: (v, d) => v == null ? '--' : v.toFixed(d),
   datetime: v => {
     if (!v) return '--';
     try { return new Date(v).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
@@ -637,6 +638,34 @@ function renderMetricsCards(m) {
       <p class="text-lg font-semibold mt-0.5 ${i.color}">${i.value}</p>
     </div>
   `).join('');
+
+  // 详细指标表（与回测结果页一致）
+  const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
+  const rows = [
+    ['总收益率',      Fmt.pct(m.total_return), m.total_return >= 0 ? 'text-red-400' : 'text-green-400'],
+    ['年化收益率',    Fmt.pct(m.annual_return), m.annual_return >= 0 ? 'text-red-400' : 'text-green-400'],
+    ['最大回撤',      Fmt.pct(m.max_drawdown), 'text-green-400'],
+    ['回撤区间',      (m.max_drawdown_start && m.max_drawdown_end) ? `${m.max_drawdown_start} → ${m.max_drawdown_end}` : '—', ''],
+    ['年化波动率',    Fmt.pct(m.volatility, 2), ''],
+    ['夏普比率',      Fmt.num(m.sharpe_ratio, 4), ''],
+    ['索提诺比率',    Fmt.num(m.sortino_ratio, 4), ''],
+    ['卡玛比率',      Fmt.num(m.calmar_ratio, 4), ''],
+    ['胜率',          Fmt.pct(m.win_rate, 1), ''],
+    ['平均盈利',      Fmt.pct(m.avg_profit, 2), 'text-red-400'],
+    ['平均亏损',      Fmt.pct(m.avg_loss, 2), 'text-green-400'],
+    ['盈亏比',        pf, ''],
+    ['平均持仓天数',  (m.avg_hold_days || 0).toFixed(1) + ' 天', ''],
+    ['总手续费',      Fmt.money(m.total_fees), ''],
+  ];
+  const detailEl = document.getElementById('detail-metrics');
+  if (detailEl) {
+    detailEl.innerHTML = rows.map(([label, value, cls]) => `
+      <div class="flex justify-between py-1 border-b border-gray-800/50">
+        <span class="text-gray-400">${label}</span>
+        <span class="${cls} text-gray-200">${value}</span>
+      </div>
+    `).join('');
+  }
 }
 
 function exportTradesCSV(trades) {
@@ -954,7 +983,7 @@ function updateEquityChart(trades, eqData) {
       ]
     : { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30, interval: Math.max(0, Math.floor(dates.length / 10) - 1) } };
 
-  // 买卖标记
+  // 买卖标记：红▲买入、绿▼卖出（A股习惯）
   const markPoint = hasDrawdown && trades && trades.length > 0 ? (() => {
     const dateToVal = {};
     dates.forEach((d, i) => { dateToVal[d] = assets[i]; });
@@ -967,7 +996,7 @@ function updateEquityChart(trades, eqData) {
         symbol: 'triangle',
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 16,
-        itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+        itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
       };
     }).filter(Boolean);
     return { symbolSize: 12, label: { show: false }, data: markers };
