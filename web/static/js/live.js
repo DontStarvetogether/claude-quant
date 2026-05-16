@@ -15,6 +15,21 @@ const Fmt = {
   money: v => v == null ? '--' : v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   pct: v => v == null ? '--' : (v * 100).toFixed(2) + '%',
   price: v => v == null ? '--' : v.toFixed(2),
+  elapsed: v => {
+    if (!v || v <= 0) return '--';
+    const total = Math.round(v);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return h + '时' + m + '分' + s + '秒';
+    if (m > 0) return m + '分' + s + '秒';
+    return s + '秒';
+  },
+  datetime: v => {
+    if (!v) return '--';
+    try { return new Date(v).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+    catch { return v; }
+  },
 };
 
 // ── 初始化 ───────────────────────────────────────────────────────────────────
@@ -566,14 +581,16 @@ async function loadSessions() {
         : 'bg-blue-900/50 text-blue-400 border-blue-800';
       return `<div class="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 cursor-pointer hover:border-gray-700 transition-colors"
                    onclick="reconnectSession('${s.session_id}')">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${colorMap[s.status] || 'bg-gray-500'}"></span>
-          <span class="px-1.5 py-0.5 text-[10px] font-medium rounded border ${modeCls}">${modeLabel}</span>
-          <span class="text-sm text-gray-200">${s.strategy_id}</span>
-          <span class="text-xs text-gray-500">${s.symbols.join(', ')}</span>
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="w-2 h-2 rounded-full shrink-0 ${colorMap[s.status] || 'bg-gray-500'}"></span>
+          <span class="px-1.5 py-0.5 text-[10px] font-medium rounded border shrink-0 ${modeCls}">${modeLabel}</span>
+          <span class="text-sm text-gray-200 shrink-0">${s.strategy_id}</span>
+          <span class="text-xs text-gray-500 truncate">${s.symbols.join(', ')}</span>
         </div>
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-5 shrink-0">
           <span class="text-sm ${s.total_assets ? 'text-green-400' : 'text-gray-500'}">${Fmt.money(s.total_assets)}</span>
+          <span class="text-xs text-gray-500" title="启动时间">${Fmt.datetime(s.started_at)}</span>
+          <span class="text-xs ${s.status === 'stopped' ? 'text-gray-400' : 'text-gray-600'}">${Fmt.elapsed(s.elapsed_seconds)}</span>
           <span class="text-xs text-gray-500">${statusMap[s.status] || s.status}</span>
           <button onclick="event.stopPropagation(); deleteSession('${s.session_id}')"
             class="text-gray-600 hover:text-red-400 transition-colors text-xs px-1" title="删除">✕</button>

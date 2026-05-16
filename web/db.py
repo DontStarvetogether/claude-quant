@@ -44,7 +44,9 @@ def init_db() -> None:
             end_date     TEXT,
             error        TEXT,
             started_at   TEXT NOT NULL,
-            finished_at  TEXT
+            finished_at  TEXT,
+            elapsed_seconds REAL NOT NULL DEFAULT 0,
+            final_positions TEXT                     -- JSON: 结束时持仓快照
         );
 
         CREATE TABLE IF NOT EXISTS trades (
@@ -76,6 +78,15 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_trades_session ON trades(session_id);
         CREATE INDEX IF NOT EXISTS idx_equity_session ON equity_snapshots(session_id);
     """)
+    # 迁移：为已有数据库添加新列
+    for col, ddl in [
+        ("elapsed_seconds", "ALTER TABLE sessions ADD COLUMN elapsed_seconds REAL NOT NULL DEFAULT 0"),
+        ("final_positions", "ALTER TABLE sessions ADD COLUMN final_positions TEXT"),
+    ]:
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError:
+            pass  # 列已存在
     conn.commit()
 
 
@@ -111,14 +122,20 @@ def update_session_status(
     total_assets: float | None = None,
     cash: float | None = None,
     error: str | None = None,
+    elapsed_seconds: float = 0.0,
+    positions_json: str | None = None,
 ) -> None:
+    import json as _json
     conn = _get_conn()
     finished = datetime.now().isoformat() if status in ("stopped", "failed") else None
     conn.execute(
         """UPDATE sessions
-           SET status=?, total_assets=?, cash=?, error=?, finished_at=COALESCE(?, finished_at)
+           SET status=?, total_assets=?, cash=?, error=?, finished_at=COALESCE(?, finished_at),
+               elapsed_seconds=MAX(elapsed_seconds, ?),
+               final_positions=COALESCE(?, final_positions)
            WHERE session_id=?""",
-        (status, total_assets, cash, error, finished, session_id),
+        (status, total_assets, cash, error, finished, elapsed_seconds,
+         positions_json, session_id),
     )
     conn.commit()
 

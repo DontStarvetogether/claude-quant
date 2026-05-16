@@ -86,6 +86,19 @@ async def get_status(session_id: str) -> LiveSessionStatus:
     d = db.get_session(session_id)
     if d is None:
         raise HTTPException(status_code=404, detail=f"session {session_id} 不存在")
+
+    # 从 DB 加载持仓快照
+    positions: list[dict] = []
+    if d.get("final_positions"):
+        try:
+            positions = json.loads(d["final_positions"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 从 DB 加载成交记录（最近 50 条）
+    trades = db.get_trades(session_id)
+    recent_trades = trades[-50:] if len(trades) > 50 else trades
+
     return LiveSessionStatus(
         session_id=d["session_id"],
         strategy_id=d["strategy_id"],
@@ -95,9 +108,9 @@ async def get_status(session_id: str) -> LiveSessionStatus:
         current_date=d.get("end_date"),
         total_assets=d.get("total_assets"),
         cash=d.get("cash"),
-        positions=[],
-        recent_trades=[],
-        elapsed_seconds=0,
+        positions=positions,
+        recent_trades=recent_trades,
+        elapsed_seconds=round(_get_elapsed(d, d), 1),
         error=d.get("error"),
         started_at=d["started_at"],
     )
@@ -167,6 +180,7 @@ async def list_sessions() -> LiveSessionsResponse:
             mode=s.mode,
             status=s.status,
             total_assets=s.total_assets,
+            elapsed_seconds=round(_get_elapsed(s), 1),
             started_at=s.started_at.isoformat(),
         ))
     # DB 中的历史会话（排除内存中已有的）
@@ -179,6 +193,7 @@ async def list_sessions() -> LiveSessionsResponse:
                 mode=d.get("mode", "paper"),
                 status=d["status"],
                 total_assets=d.get("total_assets"),
+                elapsed_seconds=round(_get_elapsed(d, d), 1),  # s 和 d 都传 dict 以覆盖所有分支
                 started_at=d["started_at"],
             ))
     return LiveSessionsResponse(sessions=sessions)
@@ -194,6 +209,31 @@ async def get_trades(session_id: str) -> list[dict]:
 async def get_equity(session_id: str) -> list[dict]:
     """获取会话的净值曲线数据。"""
     return db.get_equity_curve(session_id)
+
+
+def _get_elapsed(s: object, d: dict | None = None) -> float:
+    """获取耗时，优先取内存/DB 中的值，若无则从 started_at/finished_at 推算。"""
+    # 内存对象
+    if hasattr(s, 'elapsed_seconds') and s.elapsed_seconds > 0:
+        return s.elapsed_seconds
+    # DB 字典
+    if d and d.get("elapsed_seconds", 0) > 0:
+        return d["elapsed_seconds"]
+    # 从时间戳推算
+    started = getattr(s, 'started_at', None) if hasattr(s, 'started_at') else None
+    finished = None
+    if d:
+        started = started or d.get("started_at")
+        finished = d.get("finished_at")
+    if started:
+        from datetime import datetime
+        try:
+            st = datetime.fromisoformat(str(started))
+            ed = datetime.fromisoformat(str(finished)) if finished else datetime.now()
+            return max(0, (ed - st).total_seconds())
+        except Exception:
+            pass
+    return 0.0
 
 
 # ── 内部工具 ──────────────────────────────────────────────────────────────────

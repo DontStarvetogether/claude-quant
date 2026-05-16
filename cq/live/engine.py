@@ -6,7 +6,7 @@ LiveEngine：实盘引擎。
 
 支持两种运行模式：
   run()          实盘模式  — 使用 QMTRealtimeFeed + QMTExecutor，需要 QMT 环境
-  paper_trade()  纸上交易  — 使用 ReplayFeed + PaperExecutor，不需要 QMT
+  paper_trade()  纸上交易  — 使用 SimulatedExecutor + BarMatchingEngine（D+1 撮合）
 
 每日运行流程：
   9:25  同步券商持仓（sync_positions）
@@ -33,8 +33,9 @@ from typing import Optional, Protocol, runtime_checkable
 from loguru import logger
 
 from cq.core.event_bus import EventBus
-from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, RejectEvent, SignalEvent
+from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, OrderEvent, RejectEvent, SignalEvent
 from cq.core.models import Bar
+from cq.data.calendar import TradingCalendar
 from cq.data.feed.historical import HistoricalFeed
 from cq.data.feed.realtime import RealtimeFeed
 from cq.data.store.parquet_store import ParquetStore
@@ -51,7 +52,7 @@ _TIME_CLOSE = (15, 0)       # 收盘，触发 after_trading + EOD 结算
 
 @runtime_checkable
 class _Executor(Protocol):
-    """执行器协议（QMTExecutor / PaperExecutor 均满足此接口）。"""
+    """执行器协议（QMTExecutor 满足此接口，用于实盘模式）。"""
     event_queue: queue.Queue
 
     def connect(self) -> None: ...
@@ -73,7 +74,7 @@ class LiveEngine:
         engine.add_strategy(MyStrategy(), symbols=["600519.SH"])
         engine.run()
 
-    纸上交易用法（不需要 QMT，用历史数据驱动）：
+    纸上交易用法（D+1 撮合，与回测逻辑一致）：
         store = ParquetStore(config.data.root_path)
         engine.paper_trade(
             store=store,
@@ -144,34 +145,31 @@ class LiveEngine:
         end_date: date,
     ) -> None:
         """
-        纸上交易模式：使用 ReplayFeed + PaperExecutor。
-        不需要 QMT 环境，用历史数据驱动完整 LiveEngine 主循环。
-
-        适合：
-          - 策略逻辑验证（与 BacktestEngine 结果对比）
-          - 线程安全测试
-          - CI 自动化测试
+        纸上交易模式：使用 SimulatedExecutor + BarMatchingEngine。
+        与 BacktestEngine 共享完全相同的 D+1 撮合逻辑，
+        但通过 LiveEngine 的事件循环运行（支持 SSE 实时推送、DB 持久化）。
 
         参数：
             store       ParquetStore 实例
             start_date  回放起始日期
             end_date    回放结束日期（含）
         """
-        from cq.data.feed.replay import ReplayFeed
-        from cq.execution.paper import PaperExecutor
+        from cq.engine.matching.bar_matching import BarMatchingEngine
+        from cq.execution.simulated import SimulatedExecutor
 
         history_start = start_date - timedelta(days=self._config.live.history_days)
         bus, portfolio, risk, ctx = self._build_components(store, history_start, end_date)
         self._bus, self._portfolio = bus, portfolio
 
-        executor = PaperExecutor(bus=bus, portfolio=portfolio, risk=risk)
-        feed = ReplayFeed(store, self._symbols, start_date, end_date)
+        calendar = self._load_calendar(store)
+        executor = SimulatedExecutor(bus=bus, portfolio=portfolio, risk=risk)
+        matching = BarMatchingEngine(bus, portfolio, calendar, self._config.engine)
 
         logger.info(
-            f"纸上交易模式  策略={self._strategy.strategy_id}  "
+            f"纸上交易模式（D+1 撮合）  策略={self._strategy.strategy_id}  "
             f"{start_date}→{end_date}  标的={self._symbols}"
         )
-        self._run_paper_loop(bus, portfolio, executor, feed, ctx, feed.trade_dates)
+        self._run_paper_loop(bus, portfolio, executor, matching, ctx, start_date)
 
     def stop(self) -> None:
         """线程安全地停止引擎。"""
@@ -242,46 +240,58 @@ class LiveEngine:
         self,
         bus: EventBus,
         portfolio: PortfolioManager,
-        executor: _Executor,
-        feed: "ReplayFeed",
+        executor,
+        matching,
         ctx: StrategyContext,
-        trade_dates: list[date],
+        start_date: date,
     ) -> None:
         """
-        纸上交易事件循环（按交易日驱动，非实时钟）。
+        纸上交易事件循环（D+1 撮合，与 BacktestEngine 完全对齐）。
 
-        与 BacktestEngine 对齐的流程：
-          每个交易日：before_trading → 推送当日所有 Bar → after_trading → EOD
+        每个交易日：
+          1. on_bar() → 更新撮合引擎 Bar 缓存
+          2. matching.process_pending_orders() → 撮合前日订单（D+1）
+          3. portfolio.update_prices() → 更新持仓市值
+          4. before_trading → 推送 BarEvent → SignalEvent → OrderEvent
+          5. EndOfDayEvent → settle_eod（T+1 解锁）
+          6. after_trading
         """
         self._register_handlers(bus, portfolio, executor, self._strategy)
-        executor.connect()
+        bus.subscribe(OrderEvent, matching.on_order)
         self._strategy._setup(bus, ctx)
         self._strategy.on_init()
 
-        # ReplayFeed 数据已预加载，直接按交易日遍历
-        for trade_date, bars in self._iter_bars(feed):
-            ctx._set_date(trade_date)
-            executor.set_current_date(trade_date)
-            executor.sync_positions()
+        feed = ctx._feed  # HistoricalFeed，覆盖 history_start → end_date
+        for trade_date, bars in feed.iter_by_date():
+            if trade_date < start_date:
+                continue
 
-            # 更新价格（供风控和信号计算使用）
+            # 步骤 1：更新撮合引擎的当日 Bar 缓存
+            for bar in bars:
+                matching.on_bar(bar)
+
+            # 步骤 2：撮合前日订单（D+1 开盘成交）
+            matching.process_pending_orders(trade_date)
+            bus.dispatch_all()
+
+            # 步骤 3：更新持仓市值
             portfolio.update_prices(bars)
 
+            # 步骤 4：日初回调 + 推送 BarEvent
+            executor.set_current_date(trade_date)
+            ctx._set_date(trade_date)
             self._strategy.before_trading(trade_date)
 
-            # 逐根 Bar 推送
             for bar in bars:
                 bus.put(BarEvent(bar=bar))
-
             bus.dispatch_all()
 
-            # 排空执行器事件（PaperExecutor 在 on_signal 中同步填充 event_queue）
-            self._drain_executor_events(executor.event_queue, bus)
-            bus.dispatch_all()
-
-            self._strategy.after_trading(trade_date)
+            # 步骤 5：EOD 结算（T+1 解锁）
             bus.put(EndOfDayEvent(trade_date=trade_date))
             bus.dispatch_all()
+
+            # 步骤 6：日末回调
+            self._strategy.after_trading(trade_date)
 
             logger.debug(
                 f"[{trade_date}] 纸上交易日结束  总资产 {portfolio.get_total_assets():,.0f}"
@@ -291,6 +301,15 @@ class LiveEngine:
             f"纸上交易完成  最终资产 {portfolio.get_total_assets():,.0f} 元  "
             f"持仓 {len(portfolio.get_all_positions())} 只"
         )
+
+    @staticmethod
+    def _load_calendar(store: ParquetStore) -> TradingCalendar:
+        trading_days = store.read_calendar("SSE")
+        if not trading_days:
+            trading_days = store.read_calendar("SZSE")
+        if not trading_days:
+            raise RuntimeError("本地无交易日历数据，请先运行: python scripts/sync_calendar.py")
+        return TradingCalendar(trading_days)
 
     # ── 组件工厂 ──────────────────────────────────────────────────────────────────
 
@@ -349,10 +368,3 @@ class LiveEngine:
         except queue.Empty:
             pass
 
-    @staticmethod
-    def _iter_bars(feed: "ReplayFeed"):
-        """从 ReplayFeed 按交易日 yield (date, bars)。"""
-        for trade_date in feed.trade_dates:
-            bars = feed._bars_by_date.get(trade_date, [])
-            if bars:
-                yield trade_date, bars

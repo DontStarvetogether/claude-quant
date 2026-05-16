@@ -234,6 +234,7 @@ class LiveSessionSummary(BaseModel):
     mode: str = "paper"      # "paper" | "live"
     status: str
     total_assets: Optional[float] = None
+    elapsed_seconds: float = 0.0
     started_at: Optional[str] = None
 
 
