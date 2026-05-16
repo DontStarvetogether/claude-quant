@@ -59,11 +59,28 @@ class PreTradeRisk:
         if buy_amount <= 0:
             return False, "买入金额为零（资金不足或量 < 100 股）"
 
-        # 单股仓位上限
-        new_pct = (pos_value + buy_amount) / total_assets if total_assets > 0 else 1.0
-        if new_pct > self._config.max_position_pct:
+        # 单股仓位上限：percent/amount 信号截断，quantity 信号拒绝
+        max_allowed = total_assets * self._config.max_position_pct - pos_value
+        if max_allowed <= 0:
             return False, (
-                f"单股仓位 {new_pct:.1%} 超过上限 {self._config.max_position_pct:.1%}"
+                f"单股仓位已达上限 {self._config.max_position_pct:.1%}"
+                f"（现有 {pos_value:,.0f}，上限 {total_assets * self._config.max_position_pct:,.0f}）"
+            )
+        if buy_amount > max_allowed:
+            if signal.quantity is not None:
+                return False, (
+                    f"单股仓位将超过 {self._config.max_position_pct:.1%}"
+                    f"（买入 {buy_amount:,.0f} + 现有 {pos_value:,.0f} > 上限 {total_assets * self._config.max_position_pct:,.0f}）"
+                )
+            # percent/amount 信号：截断到上限
+            clamped_pct = max_allowed / total_assets if total_assets > 0 else 0
+            if signal.percent is not None:
+                signal.percent = clamped_pct
+            elif signal.amount is not None:
+                signal.amount = max_allowed
+            buy_amount = max_allowed
+            logger.debug(
+                f"风控截断 {signal.symbol} 买入仓位 → {clamped_pct:.1%}"
             )
 
         # 扣除当日已预留现金后的可用资金
