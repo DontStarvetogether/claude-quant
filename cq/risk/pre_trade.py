@@ -21,20 +21,31 @@ class PreTradeRisk:
         self._portfolio = portfolio
         self._config = config
         self._reserved_cash: float = 0.0  # 当日已通过风控但尚未成交的买入金额
+        self._daily_trade_count: int = 0   # 当日已通过风控的交易笔数
 
     def reset_reserved(self) -> None:
-        """每个交易日开始时重置预留资金（由执行器调用）。"""
+        """每个交易日开始时重置预留资金和交易计数（由执行器调用）。"""
         self._reserved_cash = 0.0
+        self._daily_trade_count = 0
 
     def check(self, signal: Signal) -> tuple[bool, str]:
         """
         返回 (passed, reason)。
         passed=False 时 reason 描述拒绝原因。
         """
+        # 单日最大交易笔数
+        max_trades = self._config.max_daily_trades
+        if max_trades and self._daily_trade_count >= max_trades:
+            return False, f"当日交易笔数已达上限 {max_trades}"
+
         if signal.side == OrderSide.BUY:
-            return self._check_buy(signal)
+            passed, reason = self._check_buy(signal)
         else:
-            return self._check_sell(signal)
+            passed, reason = self._check_sell(signal)
+
+        if passed:
+            self._daily_trade_count += 1
+        return passed, reason
 
     def _check_buy(self, signal: Signal) -> tuple[bool, str]:
         total_assets = self._portfolio.get_total_assets()

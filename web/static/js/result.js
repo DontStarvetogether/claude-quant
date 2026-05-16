@@ -81,7 +81,7 @@ function renderMetricCards(m) {
   const totalRet = m.total_return;
   set('m-total-return', Fmt.pct(totalRet), Fmt.colorClass(totalRet));
   set('m-annual-return', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return));
-  set('m-max-drawdown', Fmt.pct(-m.max_drawdown), 'negative');
+  set('m-max-drawdown', Fmt.pct(m.max_drawdown), 'negative');
   set('m-sharpe', Fmt.num(m.sharpe_ratio, 3));
   set('m-win-rate', Fmt.pct(m.win_rate, 1));
   set('m-total-trades', m.total_trades + ' 笔');
@@ -192,7 +192,7 @@ function renderDetailMetrics(m) {
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
     ['年化收益率', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return)],
-    ['最大回撤', Fmt.pct(-m.max_drawdown), 'negative'],
+    ['最大回撤', Fmt.pct(m.max_drawdown), 'negative'],
     ['回撤区间', m.max_drawdown_start ? `${m.max_drawdown_start} → ${m.max_drawdown_end}` : '—', ''],
     ['年化波动率', Fmt.pct(m.volatility, 2), ''],
     ['夏普比率', Fmt.num(m.sharpe_ratio, 4), ''],

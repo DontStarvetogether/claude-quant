@@ -25,12 +25,13 @@ class EngineConfig:
     stamp_tax_rate: float = 0.001
     min_commission: float = 5.0
     slippage: float = 0.0
+    adjust: str = "qfq"  # "qfq"=静态前复权, "dynamic"=动态复权
 
 
 @dataclass
 class DataConfig:
     root: str = "~/.cq/data"
-    source: str = "baostock"
+    source: str = "akshare"
     tushare_token: Optional[str] = field(default=None)
 
     def __post_init__(self) -> None:

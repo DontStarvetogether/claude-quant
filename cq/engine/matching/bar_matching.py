@@ -116,6 +116,8 @@ class BarMatchingEngine:
                 return
             fill_price = min(order.limit_price, fill_price)
 
+        # 滑点：买入方向价格上浮
+        fill_price = self._apply_slippage(fill_price, OrderSide.BUY, bar)
         self._fill(order, fill_price, bar)
 
     def _match_sell(self, order: Order, bar: Bar) -> None:
@@ -140,7 +142,27 @@ class BarMatchingEngine:
                 self._reject(order, f"限价{order.limit_price:.2f} > 开盘{fill_price:.2f}")
                 return
 
+        # 滑点：卖出方向价格下浮
+        fill_price = self._apply_slippage(fill_price, OrderSide.SELL, bar)
         self._fill(order, fill_price, bar)
+
+    def _apply_slippage(self, price: float, side: OrderSide, bar: Bar) -> float:
+        """对成交价施加滑点，买入上浮、卖出下浮，不超过涨跌停价。"""
+        slippage = self._config.slippage
+        if slippage <= 0:
+            return price
+        if side == OrderSide.BUY:
+            adj_price = round(price * (1 + slippage), 2)
+            if adj_price > bar.limit_up:
+                logger.debug(f"{bar.symbol} 滑点后价格 {adj_price:.2f} 超涨停 {bar.limit_up:.2f}，截断")
+                return bar.limit_up
+            return adj_price
+        else:
+            adj_price = round(price * (1 - slippage), 2)
+            if adj_price < bar.limit_down:
+                logger.debug(f"{bar.symbol} 滑点后价格 {adj_price:.2f} 低于跌停 {bar.limit_down:.2f}，截断")
+                return bar.limit_down
+            return adj_price
 
     def _fill(self, order: Order, price: float, bar: Bar) -> None:
         amount = price * order.quantity

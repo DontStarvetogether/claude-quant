@@ -18,6 +18,7 @@
         <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
         <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
       <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+        <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
       </nav>
     </div>
     <a href="#history-section" class="text-sm text-gray-400 hover:text-blue-400 transition-colors">历史记录</a>
@@ -45,8 +46,13 @@
         <div>
           <label class="block text-sm text-gray-400 mb-1">股票代码</label>
           <div class="flex gap-2">
-            <input id="symbol-input" type="text" placeholder="如 600519.SH"
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+            <div class="relative flex-1">
+              <input id="symbol-input" type="text" placeholder="代码或公司名，如 茅台 / 600519"
+                autocomplete="off"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+              <div id="symbol-dropdown"
+                class="hidden absolute z-50 left-0 right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto"></div>
+            </div>
             <button type="button" id="add-symbol-btn"
               class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">添加</button>
           </div>
@@ -93,16 +99,25 @@
         </div>
 
         <!-- 日期区间 -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">开始日期</label>
-            <input id="start-date" type="date"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+        <div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">开始日期</label>
+              <input id="start-date" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">结束日期</label>
+              <input id="end-date" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+            </div>
           </div>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">结束日期</label>
-            <input id="end-date" type="date"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+          <div class="flex gap-2 mt-2" id="date-shortcuts">
+            <button type="button" data-months="3" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3月</button>
+            <button type="button" data-months="12" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近1年</button>
+            <button type="button" data-months="24" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近2年</button>
+            <button type="button" data-months="36" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3年</button>
+            <button type="button" data-months="60" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近5年</button>
           </div>
         </div>
 
@@ -116,6 +131,17 @@
         <!-- 策略参数（动态渲染）-->
         <div id="strategy-params" class="space-y-4 border border-gray-800 rounded-lg p-4">
           <p class="text-sm text-gray-500">请选择策略</p>
+        </div>
+
+        <!-- 复权方式 -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">复权方式</label>
+          <select id="adjust-mode"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="qfq">前复权（静态，默认）</option>
+            <option value="dynamic">动态复权（与聚宽一致）</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">动态复权：当天为真实价格，历史价格随交易日动态调整</p>
         </div>
 
         <!-- 风控参数（折叠）-->
@@ -139,6 +165,15 @@
               </label>
               <input id="min-cash-reserve" type="range" min="0" max="30" value="5" step="1"
                 class="w-full accent-blue-500" />
+            </div>
+            <div>
+              <label class="flex justify-between text-sm text-gray-400 mb-1">
+                <span>滑点（买卖价格偏移）</span>
+                <span id="slippage-label">0 BP</span>
+              </label>
+              <input id="slippage" type="range" min="0" max="50" value="0" step="1"
+                class="w-full accent-blue-500" />
+              <p class="text-xs text-gray-600 mt-0.5">1 BP = 万分之一，买入价上浮、卖出价下浮</p>
             </div>
           </div>
         </details>

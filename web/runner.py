@@ -104,6 +104,8 @@ def submit_backtest(
     initial_capital: float,
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
+    slippage: float = 0.0,
+    adjust: str = "qfq",
     config_path: str = "config/local.yaml",
 ) -> None:
     """提交回测任务到线程池（非阻塞）。"""
@@ -117,6 +119,8 @@ def submit_backtest(
         initial_capital,
         strategy_params,
         risk_params,
+        slippage,
+        adjust,
         config_path,
     )
 
@@ -129,14 +133,14 @@ def _ensure_data(
     record: RunRecord,
     start_time: float,
 ) -> None:
-    """通过 AKShare DataPipeline 确保回测所需数据已下载到本地缓存。"""
+    """通过 DataPipeline 确保回测所需数据已下载到本地缓存。"""
     from cq.data.calendar import TradingCalendar
     from cq.data.pipeline import DataPipeline
     from cq.data.source import create_source
     from cq.data.store.parquet_store import ParquetStore
 
     store = ParquetStore(config.data.root_path)
-    source = create_source("akshare")
+    source = create_source(config.data.source)
 
     # 同步交易日历（本地没有时自动下载）
     calendar_days = store.read_calendar("SSE")
@@ -174,6 +178,8 @@ def _run_backtest(
     initial_capital: float,
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
+    slippage: float,
+    adjust: str,
     config_path: str,
 ) -> None:
     """在线程池中执行回测（同步阻塞）。"""
@@ -194,6 +200,8 @@ def _run_backtest(
     try:
         config = Config.from_yaml(config_path)
         config.engine.initial_capital = initial_capital
+        config.engine.slippage = slippage
+        config.engine.adjust = adjust
         config.risk.max_position_pct = risk_params.get("max_position_pct", 0.20)
         config.risk.min_cash_reserve = risk_params.get("min_cash_reserve", 0.05)
         config.risk.max_drawdown_stop = risk_params.get("max_drawdown_stop", 0.15)

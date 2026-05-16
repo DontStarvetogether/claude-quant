@@ -16,6 +16,8 @@
       <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
       <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
       <a href="/data.html" class="text-gray-100 font-medium">数据管理</a>
+      <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
     </nav>
   </header>
 
@@ -55,9 +57,28 @@
         <div>
           <label class="block text-sm text-gray-400 mb-1">股票代码（留空表示更新所有本地数据）</label>
           <div class="flex gap-2">
-            <input id="dl-symbols" type="text" placeholder="如 600519.SH 000858.SZ，空格分隔"
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+            <div class="relative flex-1">
+              <input id="dl-symbol-input" type="text" placeholder="输入代码或名称搜索，如 茅台 / 600519"
+                autocomplete="off"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+              <div id="dl-symbol-dropdown"
+                class="hidden absolute z-50 left-0 right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto"></div>
+            </div>
+            <button type="button" id="dl-add-btn"
+              class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">添加</button>
           </div>
+          <!-- 已选股票标签 -->
+          <div id="dl-selected-section" class="mt-2 hidden">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-gray-500">
+                已选择 <span id="dl-selected-count" class="text-blue-400 font-semibold">0</span> 只股票
+              </span>
+              <button type="button" id="dl-clear-all" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">清空</button>
+            </div>
+            <div id="dl-symbol-tags" class="flex gap-2 flex-wrap"></div>
+          </div>
+          <!-- 隐藏字段，保存已选代码 -->
+          <input id="dl-symbols" type="hidden" />
         </div>
 
         <!-- 起始日期 -->
@@ -66,6 +87,13 @@
             <label class="block text-sm text-gray-400 mb-1">数据起始日期</label>
             <input id="dl-start-date" type="date" value="2020-01-01"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500 text-sm" />
+            <div class="flex gap-2 mt-1" id="date-shortcuts">
+              <button type="button" data-months="3" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3月</button>
+              <button type="button" data-months="12" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近1年</button>
+              <button type="button" data-months="24" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近2年</button>
+              <button type="button" data-months="36" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3年</button>
+              <button type="button" data-months="60" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近5年</button>
+            </div>
           </div>
           <button id="dl-btn"
             class="px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -146,6 +174,180 @@
     let totalItems = 0;
     let searchQuery = '';
     let searchTimer = null;
+
+    // ── 股票搜索选择器 ──────────────────────────────────────────────────────
+    let allSymbols = [];          // 全量股票列表 [{symbol, name}, ...]
+    let dlSelectedSymbols = [];   // 已选股票代码
+
+    async function loadAllSymbols() {
+      try {
+        const res = await fetch('/api/symbols?sync_names=true');
+        if (!res.ok) return;
+        const data = await res.json();
+        allSymbols = data.symbols || [];
+      } catch (e) {
+        console.error('加载股票列表失败', e);
+      }
+    }
+
+    function dlGetMatches(q) {
+      if (!q) return [];
+      const term = q.toLowerCase();
+      return allSymbols.filter(s =>
+        s.symbol.toLowerCase().includes(term) ||
+        (s.name && s.name.toLowerCase().includes(term))
+      ).slice(0, 15);
+    }
+
+    function setupDlSymbolInput() {
+      const input = document.getElementById('dl-symbol-input');
+      const dropdown = document.getElementById('dl-symbol-dropdown');
+      const addBtn = document.getElementById('dl-add-btn');
+      let activeIdx = -1;
+
+      function renderDropdown(matches) {
+        if (!matches.length) { dropdown.classList.add('hidden'); return; }
+        activeIdx = -1;
+        dropdown.innerHTML = matches.map((s, i) => {
+          const selected = dlSelectedSymbols.includes(s.symbol);
+          return `
+            <div data-idx="${i}" data-symbol="${s.symbol}"
+              class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-700 text-sm ${selected ? 'opacity-50' : ''}">
+              <span class="font-mono text-gray-300">${s.symbol}</span>
+              <span class="text-gray-400 text-xs ml-3">${s.name || ''}</span>
+              ${selected ? '<span class="text-xs text-blue-400 ml-2">已选</span>' : ''}
+            </div>`;
+        }).join('');
+        dropdown.classList.remove('hidden');
+
+        dropdown.querySelectorAll('[data-symbol]').forEach(row => {
+          row.addEventListener('mousedown', e => {
+            e.preventDefault();
+            dlPickSymbol(row.dataset.symbol);
+          });
+        });
+      }
+
+      function highlightItem(idx) {
+        const items = dropdown.querySelectorAll('[data-idx]');
+        items.forEach(el => el.classList.remove('bg-gray-700'));
+        if (idx >= 0 && items[idx]) items[idx].classList.add('bg-gray-700');
+      }
+
+      input.addEventListener('input', () => {
+        renderDropdown(dlGetMatches(input.value.trim()));
+      });
+
+      input.addEventListener('keydown', e => {
+        const items = dropdown.querySelectorAll('[data-idx]');
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          activeIdx = Math.min(activeIdx + 1, items.length - 1);
+          highlightItem(activeIdx);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIdx = Math.max(activeIdx - 1, -1);
+          highlightItem(activeIdx);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (activeIdx >= 0 && items[activeIdx]) {
+            dlPickSymbol(items[activeIdx].dataset.symbol);
+          } else {
+            const val = input.value.trim().toUpperCase();
+            if (val) dlAddSymbol(val);
+            input.value = '';
+            dropdown.classList.add('hidden');
+          }
+        } else if (e.key === 'Escape') {
+          dropdown.classList.add('hidden');
+          activeIdx = -1;
+        }
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => dropdown.classList.add('hidden'), 150);
+      });
+
+      addBtn.addEventListener('click', () => {
+        const val = input.value.trim();
+        const matches = dlGetMatches(val);
+        if (matches.length === 1) {
+          dlPickSymbol(matches[0].symbol);
+        } else if (val) {
+          dlAddSymbol(val.toUpperCase());
+        }
+        input.value = '';
+        dropdown.classList.add('hidden');
+      });
+
+      document.getElementById('dl-clear-all').addEventListener('click', () => {
+        dlSelectedSymbols = [];
+        dlRenderTags();
+      });
+    }
+
+    function dlPickSymbol(symbol) {
+      dlAddSymbol(symbol);
+      document.getElementById('dl-symbol-input').value = '';
+      document.getElementById('dl-symbol-dropdown').classList.add('hidden');
+    }
+
+    function dlAddSymbol(symbol) {
+      if (!symbol) return;
+      // 尝试自动补全后缀
+      if (/^\d{6}$/.test(symbol)) {
+        const match = allSymbols.find(s => s.symbol.startsWith(symbol));
+        if (match) symbol = match.symbol;
+        else symbol = symbol.startsWith('6') ? symbol + '.SH' : symbol + '.SZ';
+      }
+      if (dlSelectedSymbols.includes(symbol)) return;
+      dlSelectedSymbols.push(symbol);
+      dlRenderTags();
+    }
+
+    function dlRemoveSymbol(symbol) {
+      dlSelectedSymbols = dlSelectedSymbols.filter(s => s !== symbol);
+      dlRenderTags();
+    }
+
+    function dlRenderTags() {
+      const section = document.getElementById('dl-selected-section');
+      const tags = document.getElementById('dl-symbol-tags');
+      const count = document.getElementById('dl-selected-count');
+      const hidden = document.getElementById('dl-symbols');
+
+      if (!dlSelectedSymbols.length) {
+        section.classList.add('hidden');
+        hidden.value = '';
+        return;
+      }
+
+      section.classList.remove('hidden');
+      count.textContent = dlSelectedSymbols.length;
+      hidden.value = dlSelectedSymbols.join(' ');
+
+      tags.innerHTML = dlSelectedSymbols.map(sym => {
+        const info = allSymbols.find(s => s.symbol === sym);
+        const name = info ? info.name : '';
+        return `
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300">
+            <span class="font-mono">${sym}</span>
+            ${name ? `<span class="text-gray-500">${name}</span>` : ''}
+            <button type="button" onclick="dlRemoveSymbol('${sym}')"
+              class="ml-0.5 text-gray-500 hover:text-red-400 transition-colors">&times;</button>
+          </span>`;
+      }).join('');
+    }
+
+    // 快捷日期按钮（数据管理只有起始日期）
+    document.getElementById('date-shortcuts')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-months]');
+      if (!btn) return;
+      const months = parseInt(btn.dataset.months);
+      const start = new Date();
+      start.setMonth(start.getMonth() - months);
+      document.getElementById('dl-start-date').value = start.toISOString().slice(0, 10);
+    });
 
     // 今天的日期字符串（用于判断数据是否最新）
     const TODAY = new Date().toISOString().slice(0, 10);
@@ -259,19 +461,31 @@
       evtSource.onmessage = (e) => {
         const d = JSON.parse(e.data);
 
-        if (d.done) {
+        // 结束标志：{done: true}（布尔值）
+        if (d.done === true) {
           evtSource.close();
+          bar.style.width = '100%';
+          text.textContent = '完成';
           setDownloadBtns(true);
           loadStats();
           loadTable();
           return;
         }
 
-        const pct = total > 0 ? Math.round(d.done / total * 100) : 0;
-        bar.style.width = pct + '%';
-        text.textContent = d.status === 'completed' ? '完成' : d.status === 'failed' ? '失败' : '下载中...';
-        count.textContent = `${d.done} / ${total}`;
-        current.textContent = d.current ? `当前：${d.current}` : '';
+        // done_flag 表示下载任务已结束（含完成/失败），更新最终状态
+        if (d.done_flag) {
+          const pct = total > 0 ? Math.round(d.done / total * 100) : 100;
+          bar.style.width = pct + '%';
+          text.textContent = d.status === 'completed' ? '完成' : '失败';
+          count.textContent = `${d.done} / ${total}`;
+          current.textContent = '';
+        } else {
+          const pct = total > 0 ? Math.round(d.done / total * 100) : 0;
+          bar.style.width = pct + '%';
+          text.textContent = d.status === 'failed' ? '失败' : '下载中...';
+          count.textContent = `${d.done} / ${total}`;
+          current.textContent = d.current ? `当前：${d.current}` : '';
+        }
 
         if (d.errors && d.errors.length > 0) {
           errorsDiv.classList.remove('hidden');
@@ -294,9 +508,8 @@
     // ── 事件绑定 ──────────────────────────────────────────────────────────────
 
     document.getElementById('dl-btn').addEventListener('click', async () => {
-      const raw = document.getElementById('dl-symbols').value.trim();
       const startDate = document.getElementById('dl-start-date').value;
-      const symbols = raw ? raw.split(/\s+/).filter(Boolean) : [];
+      const symbols = [...dlSelectedSymbols];
 
       if (!symbols.length) {
         alert('请输入至少一个股票代码，或点击"更新全部"');
@@ -358,6 +571,7 @@
 
     loadStats();
     loadTable();
+    loadAllSymbols().then(() => setupDlSymbolInput());
   </script>
 </body>
 </html>

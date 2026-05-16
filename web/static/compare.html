@@ -17,6 +17,7 @@
       <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
       <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
       <a href="/compare.html" class="text-gray-100 font-medium">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
     </nav>
   </header>
 
@@ -60,6 +61,13 @@
           <input id="initial-capital" type="number" value="1000000" min="10000" step="10000"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
         </div>
+      </div>
+      <div class="flex gap-2 mt-2" id="date-shortcuts">
+        <button type="button" data-months="3" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3月</button>
+        <button type="button" data-months="12" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近1年</button>
+        <button type="button" data-months="24" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近2年</button>
+        <button type="button" data-months="36" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3年</button>
+        <button type="button" data-months="60" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近5年</button>
       </div>
 
       <!-- 策略列表 -->
@@ -135,6 +143,17 @@
     threeYearsAgo.setFullYear(today.getFullYear() - 3);
     document.getElementById('end-date').value = today.toISOString().slice(0, 10);
     document.getElementById('start-date').value = threeYearsAgo.toISOString().slice(0, 10);
+
+    document.getElementById('date-shortcuts')?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-months]');
+      if (!btn) return;
+      const months = parseInt(btn.dataset.months);
+      const end = new Date();
+      const start = new Date(end);
+      start.setMonth(start.getMonth() - months);
+      document.getElementById('start-date').value = start.toISOString().slice(0, 10);
+      document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+    });
   }
 
   // ── 股票输入 ──────────────────────────────────────────────────────────────
@@ -457,7 +476,7 @@
     const METRICS = [
       { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
       { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
-      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(-v), colorFn: () => '#f87171' },
+      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(v), colorFn: () => '#f87171' },
       { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? '#34d399' : v >= 0 ? '#e5e7eb' : '#f87171' },
       { key: 'sortino_ratio',   label: '索提诺比率', fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
       { key: 'calmar_ratio',    label: '卡玛比率',   fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
@@ -507,7 +526,7 @@
   }
 
   function findBestIdx(key, vals) {
-    const lowerIsBetter = new Set(['max_drawdown', 'total_fees']);
+    const lowerIsBetter = new Set(['total_fees']);
     const filtered = vals.map((v, i) => ({ v, i })).filter(x => x.v != null);
     if (!filtered.length) return -1;
     if (lowerIsBetter.has(key)) {

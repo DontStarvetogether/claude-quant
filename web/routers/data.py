@@ -144,7 +144,9 @@ def _calc_disk_usage_mb(store: ParquetStore) -> float:
 
 @router.get("/stats")
 async def get_stats() -> dict:
-    """返回本地数据汇总统计。"""
+    """返回本地数据汇总统计（使用 parquet 元数据，避免逐文件读取）。"""
+    import pyarrow.parquet as pq
+
     store = _get_store()
 
     if not _name_cache:
@@ -153,36 +155,50 @@ async def get_stats() -> dict:
     symbols = _local_symbols(store)
     total_records = 0
     latest_date: Optional[str] = None
+    total_bytes = 0
 
+    bars_root = store._root / "bars"
     for sym in symbols:
         code, exchange = sym.split(".")
-        path = store._root / "bars" / exchange / code / "qfq.parquet"
+        path = bars_root / exchange / code / "qfq.parquet"
+        if not path.exists():
+            continue
+        try:
+            # 用 parquet 元数据获取行数，无需读取数据
+            meta = pq.read_metadata(path)
+            total_records += meta.num_rows
+            total_bytes += path.stat().st_size
+
+            # raw.parquet 也计入磁盘
+            raw_path = bars_root / exchange / code / "raw.parquet"
+            if raw_path.exists():
+                total_bytes += raw_path.stat().st_size
+        except Exception as e:
+            logger.warning(f"统计 {sym} 时出错: {e}")
+
+    # 最新日期：只采样最后 5 个文件（按目录名排序最大的）
+    for sym in symbols[-5:]:
+        code, exchange = sym.split(".")
+        path = bars_root / exchange / code / "qfq.parquet"
         if not path.exists():
             continue
         try:
             df = pd.read_parquet(path, columns=["trade_date"])
-            total_records += len(df)
             if not df.empty:
                 dates = pd.to_datetime(df["trade_date"]).dt.date
                 sym_latest = str(dates.max())
                 if latest_date is None or sym_latest > latest_date:
                     latest_date = sym_latest
-        except Exception as e:
-            logger.warning(f"统计 {sym} 时出错: {e}")
+        except Exception:
+            pass
 
-    disk_usage_mb = _calc_disk_usage_mb(store)
+    disk_usage_mb = round(total_bytes / (1024 * 1024), 2)
 
-    stats = DataStatsResponse(
-        total_symbols=len(symbols),
-        total_records=total_records,
-        disk_usage_mb=disk_usage_mb,
-        latest_date=latest_date,
-    )
     return {
-        "total_symbols": stats.total_symbols,
-        "total_records": stats.total_records,
-        "disk_usage_mb": stats.disk_usage_mb,
-        "latest_date": stats.latest_date,
+        "total_symbols": len(symbols),
+        "total_records": total_records,
+        "disk_usage_mb": disk_usage_mb,
+        "latest_date": latest_date,
     }
 
 

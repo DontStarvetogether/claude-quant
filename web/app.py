@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from web.routers import backtest, data, strategy, symbols
+from web.routers import backtest, data, live, strategy, symbols
 from web.data_update_service import DataUpdateService
 from cq.utils.config import Config
 
@@ -28,6 +28,7 @@ app.include_router(strategy.router)
 app.include_router(backtest.router)
 app.include_router(symbols.router)
 app.include_router(data.router)
+app.include_router(live.router)
 
 # 静态文件（前端）
 STATIC_DIR = Path(__file__).parent / "static"
@@ -88,3 +89,8 @@ async def data_page():
 @app.get("/compare.html", include_in_schema=False)
 async def compare_page():
     return FileResponse(STATIC_DIR / "compare.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/live.html", include_in_schema=False)
+async def live_page():
+    return FileResponse(STATIC_DIR / "live.html", headers=_NO_CACHE_HEADERS)

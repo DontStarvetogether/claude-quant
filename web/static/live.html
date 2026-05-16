@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Quant — 交易</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <span class="text-blue-400 text-xl font-bold tracking-tight">CLAUDE QUANT</span>
+      <nav class="flex gap-4 text-sm">
+        <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+        <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+        <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+        <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+        <a href="/live.html" class="text-gray-100 font-medium">交易</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-screen-2xl mx-auto px-6 py-8">
+
+    <!-- 顶部：启动配置（可折叠） -->
+    <details id="config-section" class="mb-8" open>
+      <summary class="text-lg font-semibold text-gray-200 mb-6 cursor-pointer select-none hover:text-gray-100 transition-colors">交易配置</summary>
+
+      <form id="live-form" class="space-y-4">
+        <!-- 模式切换 -->
+        <div class="flex items-center gap-3 mb-2">
+          <label class="text-sm text-gray-400">模式</label>
+          <div id="mode-toggle" class="flex bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
+            <button type="button" data-mode="paper"
+              class="px-4 py-1.5 text-sm font-medium transition-colors bg-blue-600 text-white">模拟盘</button>
+            <button type="button" data-mode="live"
+              class="px-4 py-1.5 text-sm font-medium transition-colors text-gray-400 hover:text-gray-200">实盘</button>
+          </div>
+          <span id="mode-hint" class="text-xs text-gray-500">使用历史数据回放，不连接券商</span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+          <!-- 策略 -->
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">策略</label>
+            <select id="strategy-select"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500">
+              <option value="">加载中...</option>
+            </select>
+          </div>
+
+          <!-- 日期 -->
+          <div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-sm text-gray-400 mb-1">开始</label>
+                <input id="start-date" type="date"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label class="block text-sm text-gray-400 mb-1">结束</label>
+                <input id="end-date" type="date"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+            <div class="flex gap-2 mt-1" id="date-shortcuts">
+              <button type="button" data-months="3" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3月</button>
+              <button type="button" data-months="12" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近1年</button>
+              <button type="button" data-months="24" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近2年</button>
+              <button type="button" data-months="36" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近3年</button>
+              <button type="button" data-months="60" class="px-2 py-0.5 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">近5年</button>
+            </div>
+          </div>
+
+          <!-- 初始资金 -->
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">初始资金（元）</label>
+            <input id="initial-capital" type="number" value="1000000" min="10000" step="10000"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
+          </div>
+
+          <!-- 按钮 -->
+          <div class="flex gap-2">
+            <button type="submit" id="start-btn"
+              class="flex-1 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              启动模拟盘
+            </button>
+          <button type="button" id="stop-btn" disabled
+            class="flex-1 py-2 bg-red-600 hover:bg-red-500 rounded-lg font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            停止
+          </button>
+          </div>
+        </div>
+
+        <!-- 股票搜索 -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">股票代码</label>
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input id="symbol-input" type="text" placeholder="代码或公司名，如 茅台 / 600519"
+                autocomplete="off"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+              <div id="symbol-dropdown"
+                class="hidden absolute z-50 left-0 right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto"></div>
+            </div>
+            <button type="button" id="add-symbol-btn"
+              class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">添加</button>
+          </div>
+          <!-- 已选标签 -->
+          <div id="symbol-tags" class="flex gap-2 flex-wrap mt-2 min-h-[28px]"></div>
+        </div>
+      </form>
+
+      <!-- 实盘 QMT 配置（仅实盘模式显示）-->
+      <div id="qmt-config" class="hidden mt-4">
+        <details class="border border-gray-800 rounded-lg overflow-hidden" open>
+          <summary class="px-4 py-3 text-sm text-gray-400 cursor-pointer hover:text-gray-200 transition-colors select-none">
+            QMT 券商配置
+            <span class="text-red-400 text-xs ml-2">* 实盘必填</span>
+          </summary>
+          <div class="px-4 pb-4 pt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">资金账号 <span class="text-red-400">*</span></label>
+              <input id="qmt-account-id" type="text" placeholder="如 1234567890"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">QMT 数据目录</label>
+              <input id="qmt-dir" type="text" placeholder="C:/国金证券QMT交易端/userdata_mini"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- 策略参数（动态渲染）-->
+      <div id="strategy-params" class="mt-4 hidden">
+        <details class="border border-gray-800 rounded-lg overflow-hidden" open>
+          <summary class="px-4 py-3 text-sm text-gray-400 cursor-pointer hover:text-gray-200 transition-colors select-none">策略参数</summary>
+          <div id="params-container" class="px-4 pb-4 pt-2 grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+        </details>
+      </div>
+
+      <!-- 错误提示 -->
+      <div id="form-error" class="hidden mt-3 text-red-400 text-sm px-3 py-2 bg-red-900/30 rounded-lg border border-red-800"></div>
+    </details>
+
+    <!-- 状态概览卡片 -->
+    <section id="status-section" class="hidden mb-8">
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p class="text-xs text-gray-500">状态</p>
+          <p id="status-label" class="text-sm font-semibold text-yellow-400">--</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p class="text-xs text-gray-500">当前日期</p>
+          <p id="status-date" class="text-sm font-semibold text-gray-200">--</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p class="text-xs text-gray-500">总资产</p>
+          <p id="status-assets" class="text-sm font-semibold text-green-400">--</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p class="text-xs text-gray-500">现金</p>
+          <p id="status-cash" class="text-sm font-semibold text-blue-400">--</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <p class="text-xs text-gray-500">耗时</p>
+          <p id="status-elapsed" class="text-sm font-semibold text-gray-200">--</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 净值曲线（全宽） -->
+    <section id="equity-section" class="hidden mb-8 -mx-6">
+      <h3 class="text-sm font-semibold text-gray-300 mb-3 px-6">净值曲线</h3>
+      <div id="equity-chart" class="w-full bg-gray-900 border-y border-gray-800" style="height: 50vh; min-height: 320px;"></div>
+    </section>
+
+    <!-- 持仓 + 成交 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+      <!-- 持仓表格 -->
+      <section id="positions-section" class="hidden">
+        <h3 class="text-sm font-semibold text-gray-300 mb-3">当前持仓</h3>
+        <div class="overflow-x-auto border border-gray-800 rounded-xl">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-900 text-gray-500 text-xs">
+              <tr>
+                <th class="px-3 py-2 text-left">代码</th>
+                <th class="px-3 py-2 text-right">持仓</th>
+                <th class="px-3 py-2 text-right">成本</th>
+                <th class="px-3 py-2 text-right">现价</th>
+                <th class="px-3 py-2 text-right">市值</th>
+                <th class="px-3 py-2 text-right">盈亏</th>
+                <th class="px-3 py-2 text-right">盈亏%</th>
+              </tr>
+            </thead>
+            <tbody id="positions-body" class="divide-y divide-gray-800"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 成交流水 -->
+      <section id="trades-section" class="hidden">
+        <h3 class="text-sm font-semibold text-gray-300 mb-3">最近成交</h3>
+        <div class="overflow-x-auto border border-gray-800 rounded-xl max-h-96 overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-900 text-gray-500 text-xs sticky top-0">
+              <tr>
+                <th class="px-3 py-2 text-left">日期</th>
+                <th class="px-3 py-2 text-left">代码</th>
+                <th class="px-3 py-2 text-center">方向</th>
+                <th class="px-3 py-2 text-right">价格</th>
+                <th class="px-3 py-2 text-right">数量</th>
+                <th class="px-3 py-2 text-right">金额</th>
+              </tr>
+            </thead>
+            <tbody id="trades-body" class="divide-y divide-gray-800"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- 历史会话 -->
+    <section class="mt-8">
+      <h3 class="text-sm font-semibold text-gray-300 mb-3">历史会话</h3>
+      <div id="sessions-list" class="space-y-2">
+        <p class="text-sm text-gray-600">暂无记录</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/live.js?v=18"></script>
+</body>
+</html>

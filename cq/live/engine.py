@@ -87,6 +87,9 @@ class LiveEngine:
         self._strategy: Optional[Strategy] = None
         self._symbols: list[str] = []
         self._stop_event = threading.Event()
+        # 供外部（如 Web 层）读取实时状态
+        self._portfolio: Optional[PortfolioManager] = None
+        self._bus: Optional[EventBus] = None
 
     def add_strategy(self, strategy: Strategy, symbols: list[str]) -> None:
         if not strategy.strategy_id:
@@ -113,6 +116,7 @@ class LiveEngine:
         history_start = today - timedelta(days=live_cfg.history_days)
 
         bus, portfolio, risk, ctx = self._build_components(store, history_start, today)
+        self._bus, self._portfolio = bus, portfolio
 
         executor = QMTExecutor(
             bus=bus,
@@ -158,6 +162,7 @@ class LiveEngine:
 
         history_start = start_date - timedelta(days=self._config.live.history_days)
         bus, portfolio, risk, ctx = self._build_components(store, history_start, end_date)
+        self._bus, self._portfolio = bus, portfolio
 
         executor = PaperExecutor(bus=bus, portfolio=portfolio, risk=risk)
         feed = ReplayFeed(store, self._symbols, start_date, end_date)

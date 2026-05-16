@@ -131,7 +131,11 @@ class BacktestEngine:
         # 构建组件
         store = ParquetStore(self._config.data.root_path)
         calendar = self._load_calendar(store)
-        feed = HistoricalFeed(store, self._symbols, start, end)
+        feed = HistoricalFeed(
+            store, self._symbols, start, end,
+            calendar=calendar,
+            adjust=self._config.engine.adjust,
+        )
 
         bus = EventBus()
         portfolio = PortfolioManager(self._config.engine)

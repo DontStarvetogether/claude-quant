@@ -49,6 +49,8 @@ class BacktestRequest(BaseModel):
     initial_capital: float = Field(default=1_000_000, ge=10_000)
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     risk: RiskParams = Field(default_factory=RiskParams)
+    slippage: float = Field(default=0.0, ge=0.0, le=0.01)
+    adjust: str = Field(default="qfq", pattern="^(qfq|dynamic)$")
 
 
 class BacktestSubmitResponse(BaseModel):
@@ -161,3 +163,79 @@ class SymbolInfo(BaseModel):
 class SymbolsResponse(BaseModel):
     symbols: list[SymbolInfo]
     total: int
+
+
+# ── 实盘/模拟盘 ──────────────────────────────────────────────────────────────
+
+
+class LiveStartRequest(BaseModel):
+    strategy_id: str
+    symbols: list[str] = Field(min_length=1)
+    mode: str = "paper"      # "paper" | "live"
+    start_date: Optional[str] = None    # 模拟盘回放起始日（模拟盘必填）
+    end_date: Optional[str] = None      # 模拟盘回放结束日（模拟盘必填）
+    initial_capital: float = Field(default=1_000_000, ge=10_000)
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    risk: RiskParams = Field(default_factory=RiskParams)
+    # 实盘专用配置
+    account_id: Optional[str] = None    # QMT 资金账号（实盘必填）
+    mini_qmt_dir: Optional[str] = None  # QMT 数据目录（实盘可选，有默认值）
+
+
+class LiveStartResponse(BaseModel):
+    session_id: str
+    status: str
+
+
+class LivePositionItem(BaseModel):
+    symbol: str
+    total_qty: int
+    tradeable_qty: int
+    avg_cost: float
+    last_price: float
+    market_value: float
+    unrealized_pnl: float
+    unrealized_pnl_pct: float
+
+
+class LiveTradeItem(BaseModel):
+    trade_id: str
+    symbol: str
+    side: str
+    price: float
+    quantity: int
+    amount: float
+    commission: float
+    stamp_tax: float
+    net_amount: float
+    trade_date: str
+
+
+class LiveSessionStatus(BaseModel):
+    session_id: str
+    strategy_id: str
+    symbols: list[str]
+    mode: str = "paper"      # "paper" | "live"
+    status: str              # "starting" | "running" | "stopped" | "failed"
+    current_date: Optional[str] = None
+    total_assets: Optional[float] = None
+    cash: Optional[float] = None
+    positions: list[LivePositionItem] = Field(default_factory=list)
+    recent_trades: list[LiveTradeItem] = Field(default_factory=list)
+    elapsed_seconds: float = 0.0
+    error: Optional[str] = None
+    started_at: Optional[str] = None
+
+
+class LiveSessionSummary(BaseModel):
+    session_id: str
+    strategy_id: str
+    symbols: list[str]
+    mode: str = "paper"      # "paper" | "live"
+    status: str
+    total_assets: Optional[float] = None
+    started_at: Optional[str] = None
+
+
+class LiveSessionsResponse(BaseModel):
+    sessions: list[LiveSessionSummary]

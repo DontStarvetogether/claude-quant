@@ -65,6 +65,18 @@ function initDateDefaults() {
 
   document.getElementById('end-date').value = today.toISOString().slice(0, 10);
   document.getElementById('start-date').value = threeYearsAgo.toISOString().slice(0, 10);
+
+  // 快捷日期按钮
+  document.getElementById('date-shortcuts')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-months]');
+    if (!btn) return;
+    const months = parseInt(btn.dataset.months);
+    const end = new Date();
+    const start = new Date(end);
+    start.setMonth(start.getMonth() - months);
+    document.getElementById('start-date').value = start.toISOString().slice(0, 10);
+    document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+  });
 }
 
 // ── 策略加载 ─────────────────────────────────────────────────────────────────
@@ -151,14 +163,99 @@ function getStrategyParams() {
   return params;
 }
 
-// ── 股票代码输入 ─────────────────────────────────────────────────────────────
+// ── 股票代码输入（支持模糊搜索公司名/代码）────────────────────────────────
 function setupSymbolInput() {
   const input = document.getElementById('symbol-input');
   const btn = document.getElementById('add-symbol-btn');
+  const dropdown = document.getElementById('symbol-dropdown');
+  let activeIdx = -1;
 
-  btn.addEventListener('click', () => addSymbol(input.value.trim().toUpperCase()));
+  function getMatches(q) {
+    if (!q) return [];
+    const term = q.toLowerCase();
+    return QUICK_SYMBOLS.filter(s =>
+      s.symbol.toLowerCase().includes(term) ||
+      (s.name && s.name.toLowerCase().includes(term))
+    ).slice(0, 12);
+  }
+
+  function renderDropdown(matches) {
+    if (!matches.length) { dropdown.classList.add('hidden'); return; }
+    activeIdx = -1;
+    dropdown.innerHTML = matches.map((s, i) => `
+      <div data-idx="${i}" data-symbol="${s.symbol}"
+        class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-700 text-sm">
+        <span class="font-mono text-gray-300">${s.symbol}</span>
+        <span class="text-gray-400 text-xs ml-3">${s.name || ''}</span>
+      </div>`).join('');
+    dropdown.classList.remove('hidden');
+
+    dropdown.querySelectorAll('[data-symbol]').forEach(row => {
+      row.addEventListener('mousedown', e => {
+        e.preventDefault();
+        pickSymbol(row.dataset.symbol);
+      });
+    });
+  }
+
+  function pickSymbol(symbol) {
+    addSymbol(symbol);
+    input.value = '';
+    dropdown.classList.add('hidden');
+    activeIdx = -1;
+  }
+
+  function highlightItem(idx) {
+    const items = dropdown.querySelectorAll('[data-idx]');
+    items.forEach(el => el.classList.remove('bg-gray-700'));
+    if (idx >= 0 && items[idx]) items[idx].classList.add('bg-gray-700');
+  }
+
+  input.addEventListener('input', () => {
+    renderDropdown(getMatches(input.value.trim()));
+  });
+
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); addSymbol(input.value.trim().toUpperCase()); }
+    const items = dropdown.querySelectorAll('[data-idx]');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      highlightItem(activeIdx);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, -1);
+      highlightItem(activeIdx);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && items[activeIdx]) {
+        pickSymbol(items[activeIdx].dataset.symbol);
+      } else {
+        // 精确代码输入兼容
+        addSymbol(input.value.trim().toUpperCase());
+        input.value = '';
+        dropdown.classList.add('hidden');
+      }
+    } else if (e.key === 'Escape') {
+      dropdown.classList.add('hidden');
+      activeIdx = -1;
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // 延迟隐藏，允许 mousedown 先触发
+    setTimeout(() => dropdown.classList.add('hidden'), 150);
+  });
+
+  btn.addEventListener('click', () => {
+    const val = input.value.trim();
+    const matches = getMatches(val);
+    if (matches.length === 1) {
+      pickSymbol(matches[0].symbol);
+    } else {
+      addSymbol(val.toUpperCase());
+      input.value = '';
+      dropdown.classList.add('hidden');
+    }
   });
 }
 
@@ -172,7 +269,7 @@ function addSymbol(symbol) {
   selectedSymbols.add(symbol);
   updateSymbolDisplay();
   buildQuickSymbols();
-  document.getElementById('symbol-input').value = '';
+  clearError();
 }
 
 function removeSymbol(symbol) {
@@ -359,11 +456,15 @@ function setupSelectAll() {
 function setupRiskSliders() {
   const maxPos = document.getElementById('max-pos-pct');
   const minCash = document.getElementById('min-cash-reserve');
+  const slippage = document.getElementById('slippage');
   maxPos.addEventListener('input', () => {
     document.getElementById('max-pos-label').textContent = maxPos.value + '%';
   });
   minCash.addEventListener('input', () => {
     document.getElementById('min-cash-label').textContent = minCash.value + '%';
+  });
+  slippage.addEventListener('input', () => {
+    document.getElementById('slippage-label').textContent = slippage.value + ' BP';
   });
 }
 
@@ -394,6 +495,8 @@ function setupForm() {
         max_position_pct: parseInt(document.getElementById('max-pos-pct').value) / 100,
         min_cash_reserve: parseInt(document.getElementById('min-cash-reserve').value) / 100,
       },
+      slippage: parseFloat(document.getElementById('slippage').value) / 10000,
+      adjust: document.getElementById('adjust-mode').value,
     };
 
     try {

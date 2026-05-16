@@ -95,10 +95,10 @@ class DataUpdateService:
         except Exception as e:
             logger.error(f"更新K线数据失败: {e}")
 
-    async def update_all_stocks(self, limit: int = 100) -> None:
+    async def update_all_stocks(self, limit: int = 100, years: int = 10) -> None:
         """按需更新全市场股票"""
         try:
-            logger.info(f"开始下载 {limit} 只新股票...")
+            logger.info(f"开始下载 {limit} 只新股票（最近 {years} 年）...")
             pipeline = self._build_pipeline()
 
             # 获取全市场股票列表
@@ -111,10 +111,9 @@ class DataUpdateService:
                 logger.warning("未获取到股票列表")
                 return
 
-            # 下载最近3年数据
             from datetime import date, timedelta
             end_date = date.today()
-            start_date = end_date - timedelta(days=365*3)
+            start_date = end_date - timedelta(days=365*years)
 
             logger.info(f"下载 {len(symbols_to_download)} 只股票的数据 ({start_date} ~ {end_date})")
 

@@ -8,25 +8,32 @@
 ```
 cq/
   core/       models.py(Bar/Order/Trade/Position/Account/Signal), events.py, event_bus.py
-  data/       source/(baostock,akshare), store/parquet_store.py, feed/historical.py, adjust/adjuster.py, calendar.py
+  data/       source/(baostock,akshare), store/parquet_store.py, feed/(historical,realtime,replay).py, adjust/adjuster.py, calendar.py
   engine/     backtest_engine.py, portfolio.py, matching/bar_matching.py
-  strategy/   base.py(Strategy ABC + StrategyContext), examples/double_ma.py
-  execution/  simulated.py（只有模拟，无实盘）
+  strategy/   base.py(Strategy ABC + StrategyContext), examples/(double_ma,rsi,bollinger,momentum).py
+  execution/  simulated.py, qmt.py(QMT券商对接), paper.py(模拟执行器)
+  live/       engine.py(实盘引擎，支持 run/paper_trade 两种模式)
   risk/       pre_trade.py
   performance/metrics.py
 
 web/
   app.py          FastAPI 主入口
-  routers/        backtest.py, strategy.py, symbols.py
+  routers/        backtest.py, strategy.py, symbols.py, data.py, live.py
   schemas.py      Pydantic 请求/响应模型
   serializers.py  结果序列化
   runner.py       回测任务运行器
+  live_runner.py  模拟盘会话管理器
+  store.py        回测记录内存存储
   static/
-    index.html    回测配置页（主页）
-    result.html   回测结果页
-    js/           main.js, api.js, result.js
+    index.html      回测配置页（主页）
+    result.html     回测结果页
+    strategies.html 策略库页
+    data.html       数据管理页
+    compare.html    策略对比页
+    live.html       模拟盘监控页
+    js/             main.js, api.js, result.js, live.js
 
-scripts/    run_backtest.py, download_data.py, download_all_stocks.py
+scripts/    run_backtest.py, run_live.py, download_data.py, download_all_stocks.py
 run_web.py  启动入口
 ```
 
@@ -36,12 +43,16 @@ run_web.py  启动入口
 - 回测引擎：D日信号→D+1开盘成交（无前视偏差），T+1结算，涨跌停拒单
 - 风控：单股仓位上限、最低现金比例、T+1 校验
 - 绩效：总收益/年化/最大回撤/夏普/索提诺/卡玛/胜率/盈亏比
-- Web：回测配置UI + 结果页，SSE 实时进度，/api/backtest|strategy|symbols
+- Web 回测：配置UI + 结果页（净值曲线/回撤图/成交明细），SSE 实时进度，/api/backtest|strategy|symbols
+- Web 页面：strategies.html（策略库）、data.html（数据管理）、compare.html（策略对比）
+- 实盘核心：QMT 券商对接（qmt.py）、实时行情（realtime.py）、实盘引擎（live/engine.py）、模拟执行器（paper.py）
+- 策略示例：双均线、RSI、布林带、动量（4个）
+- Web 模拟盘：live.html 监控页 + /api/live（start/stop/status/stream/sessions），SSE 实时推送持仓和成交
 
 ## 缺失模块（待实现）
-- P0 实盘：`cq/execution/qmt.py`（QMT执行器）、`cq/data/feed/realtime.py`、`cq/live/engine.py`
-- P1 Web页面：`live.html`（实盘监控）、`data.html`（数据管理）、`strategies.html`（策略库）、`compare.html`（策略对比）
-- P2 初学者：更多策略示例（目前只有 DoubleMaStrategy），result.html 缺净值曲线/回撤图/月度热力图
+- P0 实盘上线：交易记录持久化（当前全在内存）、QMT 断连重连、max_daily_trades 风控执行、Web 层接入 QMT 实盘模式
+- P1 体验改善：live.html 净值曲线图表、ST 股涨跌停修正（±5%）、模拟盘股票搜索选择器、多策略并行管理
+- P2 进阶功能：WebSocket 双向通信（手动下单/撤单）、实盘告警通知、策略热加载
 
 ## 关键设计
 - Strategy 只能通过 StrategyContext（只读快照）访问状态，不直接持有 Portfolio

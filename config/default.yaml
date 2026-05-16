@@ -8,10 +8,11 @@ engine:
   stamp_tax_rate: 0.001            # 印花税率（千一，仅卖出）
   min_commission: 5.0              # 最低佣金（元）
   slippage: 0.0                    # 滑点（回测默认 0，实盘可设为 0.0001）
+  adjust: "qfq"                    # 复权方式：qfq=静态前复权, dynamic=动态复权
 
 data:
   root: "~/.cq/data"               # 本地数据根目录
-  source: "akshare"                # 默认数据源：akshare | baostock
+  source: "akshare"                 # 默认数据源：akshare | baostock
   # TUSHARE_TOKEN 通过环境变量注入，不写这里
 
 risk:

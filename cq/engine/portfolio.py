@@ -55,6 +55,9 @@ class PortfolioManager:
             pos.today_bought_qty += trade.quantity
             # tradeable_qty 不增加！T+1 约束：EOD settle 后才解锁
 
+            # 用成交价作为 last_price（确保 market_value 正确）
+            pos.last_price = trade.price
+
             self._account.cash -= (trade.amount + trade.commission)
             logger.debug(
                 f"买入成交 {trade.symbol} {trade.quantity}股 @{trade.price:.2f}, "
