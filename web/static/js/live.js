@@ -492,6 +492,7 @@ function showStatusSection() {
 function showMetricsSection() {
   document.getElementById('metrics-section').classList.remove('hidden');
   document.getElementById('equity-section').classList.remove('hidden');
+  document.getElementById('monthly-section').classList.remove('hidden');
 }
 
 function updateDashboard(data) {
@@ -502,12 +503,9 @@ function updateDashboard(data) {
     const last = equityData[equityData.length - 1];
     if (!last || last.date !== data.current_date) {
       equityData.push({ date: data.current_date, total_assets: data.total_assets, cash: data.cash || 0 });
-      initEquityChart();
-      updateEquityChart();
     } else {
       last.total_assets = data.total_assets;
       last.cash = data.cash || 0;
-      updateEquityChart();
     }
   }
 
@@ -524,10 +522,15 @@ function updateDashboard(data) {
   document.getElementById('status-cash').textContent = Fmt.money(data.cash);
   document.getElementById('status-elapsed').textContent = (data.elapsed_seconds || 0).toFixed(1) + 's';
 
-  // 绩效指标卡片
+  // 绩效指标卡片 + 月度收益
   if (data.metrics) {
     renderMetricsCards(data.metrics);
+    if (equityData.length > 0) renderMonthlyReturns(equityData);
   }
+
+  // 净值图表（传递成交数据用于买卖标记）
+  initEquityChart();
+  updateEquityChart(data.recent_trades);
 
   // 持仓表格
   const posBody = document.getElementById('positions-body');
@@ -624,6 +627,111 @@ function exportTradesCSV(trades) {
   a.click(); URL.revokeObjectURL(url);
 }
 
+// ── 月度收益 ─────────────────────────────────────────────────────────────────
+
+function renderMonthlyReturns(equityArr) {
+  if (!equityArr || equityArr.length < 2) return;
+  showMetricsSection();
+
+  const monthly = _computeMonthlyReturns(equityArr);
+  if (!monthly.length) return;
+
+  // 柱状图
+  const barDom = document.getElementById('monthly-bar-chart');
+  if (!barDom) return;
+  const barChart = echarts.getInstanceByDom(barDom) || echarts.init(barDom, 'dark');
+  barChart.setOption({
+    backgroundColor: 'transparent',
+    grid: { left: 48, right: 12, top: 16, bottom: 48 },
+    xAxis: {
+      type: 'category', data: monthly.map(m => m.ym),
+      axisLabel: { color: '#6b7280', fontSize: 9, rotate: 45 },
+      axisLine: { lineStyle: { color: '#374151' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#6b7280', fontSize: 10, formatter: v => v.toFixed(1) + '%' },
+      splitLine: { lineStyle: { color: '#1f2937' } },
+    },
+    tooltip: {
+      trigger: 'axis', backgroundColor: '#1f2937', borderColor: '#374151',
+      textStyle: { color: '#e5e7eb', fontSize: 12 },
+      formatter: p => `<b>${p[0].name}</b>：${p[0].value >= 0 ? '+' : ''}${p[0].value.toFixed(2)}%`,
+    },
+    series: [{
+      type: 'bar', barMaxWidth: 24,
+      data: monthly.map(m => ({
+        value: +(m.ret * 100).toFixed(2),
+        itemStyle: { color: m.ret >= 0 ? '#22c55e' : '#ef4444', borderRadius: [2, 2, 0, 0] },
+      })),
+    }],
+  });
+  window.addEventListener('resize', () => barChart.resize());
+
+  // 热力图
+  _renderMonthlyHeatmap(monthly);
+}
+
+function _computeMonthlyReturns(equityArr) {
+  if (!equityArr.length) return [];
+  const lastOfMonth = {};
+  equityArr.forEach(d => {
+    const ym = d.date.slice(0, 7);
+    lastOfMonth[ym] = d.total_assets;
+  });
+  const yms = Object.keys(lastOfMonth).sort();
+  return yms.map((ym, j) => {
+    const cur = lastOfMonth[ym];
+    const prev = j === 0 ? equityArr[0].total_assets : lastOfMonth[yms[j - 1]];
+    return { ym, ret: prev > 0 ? (cur - prev) / prev : 0 };
+  });
+}
+
+function _renderMonthlyHeatmap(monthly) {
+  const years = [...new Set(monthly.map(m => m.ym.slice(0, 4)))].sort();
+  const dataMap = {};
+  monthly.forEach(m => { dataMap[m.ym] = m.ret; });
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  function cellColor(ret) {
+    if (ret === undefined || ret === null) return { bg: '#111827', text: '#4b5563' };
+    if (ret >  0.05) return { bg: '#15803d', text: '#fff' };
+    if (ret >  0.02) return { bg: '#16a34a', text: '#fff' };
+    if (ret >  0.005) return { bg: '#22c55e', text: '#14532d' };
+    if (ret >  0)    return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret === 0)   return { bg: '#1f2937', text: '#9ca3af' };
+    if (ret > -0.005) return { bg: '#fca5a5', text: '#7f1d1d' };
+    if (ret > -0.02) return { bg: '#ef4444', text: '#fff' };
+    if (ret > -0.05) return { bg: '#dc2626', text: '#fff' };
+    return { bg: '#991b1b', text: '#fff' };
+  }
+
+  const headerCells = months.map(m =>
+    `<div style="text-align:center;color:#6b7280;font-size:10px;padding:2px 0">${m}</div>`
+  ).join('');
+
+  const dataRows = years.map(year => {
+    const cells = Array.from({ length: 12 }, (_, i) => {
+      const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
+      const ret = dataMap[ym];
+      const { bg, text } = cellColor(ret);
+      const label = ret !== undefined
+        ? (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%'
+        : '';
+      return `<div style="background:${bg};color:${text};border-radius:3px;padding:3px 2px;text-align:center;font-size:10px;white-space:nowrap" title="${ym} ${label}">${label}</div>`;
+    }).join('');
+    return `
+      <div style="color:#9ca3af;font-size:10px;text-align:right;padding-right:6px;line-height:24px">${year}</div>
+      ${cells}`;
+  }).join('');
+
+  document.getElementById('monthly-heatmap').innerHTML = `
+    <div style="display:grid;grid-template-columns:36px repeat(12,1fr);gap:3px;min-width:520px">
+      <div></div>${headerCells}
+      ${dataRows}
+    </div>`;
+}
+
 // ── 历史会话 ─────────────────────────────────────────────────────────────────
 
 async function loadSessions() {
@@ -704,7 +812,8 @@ async function reconnectSession(sessionId) {
         drawdown: data.equity_curve.drawdown ? data.equity_curve.drawdown[i] : 0,
       }));
       initEquityChart();
-      updateEquityChart();
+      updateEquityChart(data.recent_trades);
+      renderMonthlyReturns(equityData);
     } else {
       await loadEquityCurve(sessionId);
     }
@@ -724,7 +833,7 @@ function initEquityChart() {
   }
 }
 
-function updateEquityChart() {
+function updateEquityChart(trades) {
   if (equityData.length === 0) return;
   document.getElementById('equity-section').classList.remove('hidden');
   initEquityChart();
@@ -769,9 +878,29 @@ function updateEquityChart() {
       ]
     : { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30, interval: Math.max(0, Math.floor(dates.length / 10) - 1) } };
 
+  // 买卖标记
+  const markPoint = hasDrawdown && trades && trades.length > 0 ? (() => {
+    const dateToVal = {};
+    dates.forEach((d, i) => { dateToVal[d] = assets[i]; });
+    const markers = trades.map(t => {
+      const y = dateToVal[t.trade_date];
+      if (y === undefined) return null;
+      const isBuy = t.side === 'BUY';
+      return {
+        coord: [t.trade_date, y],
+        symbol: 'triangle',
+        symbolRotate: isBuy ? 0 : 180,
+        symbolSize: 16,
+        itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+      };
+    }).filter(Boolean);
+    return { symbolSize: 12, label: { show: false }, data: markers };
+  })() : undefined;
+
   const series = [
     { name: '总资产', type: 'line', data: assets, smooth: true, symbol: 'none', xAxisIndex: 0, yAxisIndex: 0,
       lineStyle: { width: 2 }, itemStyle: { color: '#34d399' },
+      markPoint,
     },
     { name: '初始资金', type: 'line', data: dates.map(() => initialCapital), symbol: 'none', xAxisIndex: 0, yAxisIndex: 0,
       lineStyle: { width: 1, type: 'dashed', color: '#6b7280' }, itemStyle: { color: '#6b7280' },
