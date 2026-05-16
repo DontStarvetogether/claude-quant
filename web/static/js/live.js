@@ -575,8 +575,10 @@ function updateDashboard(data) {
     }
   }
 
-  // 缓存成交数据
-  if (data.recent_trades) st.trades = data.recent_trades;
+  // 缓存成交数据（按日期排序，确保早→晚）
+  if (data.recent_trades) {
+    st.trades = [...data.recent_trades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
+  }
   if (data.metrics) st.metrics = data.metrics;
 
   // 状态卡片
@@ -630,15 +632,20 @@ function updateDashboard(data) {
     tradeCount.textContent = `共 ${allTrades.length} 笔`;
     exportBtn.classList.remove('hidden');
     exportBtn.onclick = () => exportTradesCSV(allTrades);
-    tradeBody.innerHTML = allTrades.map(t => {
+    const nameMap = {};
+    (allSymbols || []).forEach(s => { nameMap[s.symbol] = s.name || ''; });
+    // 按日期排序（早→晚）
+    const sortedTrades = [...allTrades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
+    tradeBody.innerHTML = sortedTrades.map(t => {
       const sideColor = t.side === 'BUY' ? 'text-red-400' : 'text-green-400';
       const sideText = t.side === 'BUY' ? '买入' : '卖出';
       const net = t.side === 'BUY'
         ? -(t.amount + (t.commission || 0))
         : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
+      const sName = nameMap[t.symbol] || '';
       return `<tr class="hover:bg-gray-800/50">
         <td class="px-3 py-2 text-left text-gray-400">${t.trade_date}</td>
-        <td class="px-3 py-2 text-left text-gray-200">${t.symbol}</td>
+        <td class="px-3 py-2 text-left text-gray-200">${t.symbol}${sName ? ' <span class=\"text-gray-500 text-xs\">' + sName + '</span>' : ''}</td>
         <td class="px-3 py-2 text-center ${sideColor}">${sideText}</td>
         <td class="px-3 py-2 text-right">${Fmt.price(t.price)}</td>
         <td class="px-3 py-2 text-right">${t.quantity}</td>
@@ -1025,11 +1032,14 @@ function updateEquityChart(trades, eqData) {
   const markPoint = hasDrawdown && trades && trades.length > 0 ? (() => {
     const dateToVal = {};
     dates.forEach((d, i) => { dateToVal[d] = assets[i]; });
+    const nameMap = {};
+    (allSymbols || []).forEach(s => { nameMap[s.symbol] = s.name || ''; });
     const markers = trades.map(t => {
       const y = dateToVal[t.trade_date];
       if (y === undefined) return null;
       const isBuy = t.side === 'BUY';
-      const label = (isBuy ? '买入' : '卖出') + ' ' + t.symbol + ' ' + t.quantity + '股 @' + Fmt.price(t.price) + ' ' + Fmt.money(t.amount);
+      const sName = nameMap[t.symbol] || '';
+      const label = (isBuy ? '买入 ' : '卖出 ') + t.symbol + (sName ? ' ' + sName : '') + '\n' + t.quantity + '股 @' + Fmt.price(t.price) + ' ' + Fmt.money(t.amount);
       return {
         coord: [t.trade_date, y],
         name: label,
@@ -1037,10 +1047,10 @@ function updateEquityChart(trades, eqData) {
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 16,
         itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
-        emphasis: { label: { show: true, formatter: label, position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
+        emphasis: { label: { show: true, formatter: label.replace(/\n/g, ' '), position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
       };
     }).filter(Boolean);
-    return { symbolSize: 14, label: { show: false }, data: markers };
+    return { symbolSize: 14, label: { show: false }, emphasis: { label: { show: true } }, data: markers };
   })() : undefined;
 
   const series = [

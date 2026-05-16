@@ -264,7 +264,8 @@ function _buildTradeMarkers(trades, curve) {
     const y = dateToVal[t.trade_date];
     if (y === undefined) return null;
     const isBuy = t.side === 'BUY';
-    const label = (isBuy ? '买入' : '卖出') + ' ' + t.symbol + ' ' + t.quantity + '股 @' + t.price.toFixed(2) + ' ' + Fmt.money(t.amount);
+    const sName = STOCK_NAMES[t.symbol] || '';
+    const label = (isBuy ? '买入 ' : '卖出 ') + t.symbol + (sName ? ' ' + sName : '') + ' ' + t.quantity + '股 @' + t.price.toFixed(2) + ' ' + Fmt.money(t.amount);
     return {
       coord: [t.trade_date, y],
       name: label,
