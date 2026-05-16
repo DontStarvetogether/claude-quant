@@ -28,36 +28,39 @@ class PreTradeRisk:
         self._reserved_cash = 0.0
         self._daily_trade_count = 0
 
-    def check(self, signal: Signal) -> tuple[bool, str]:
+    def check(self, signal: Signal) -> tuple[bool, str, Signal | None]:
         """
-        返回 (passed, reason)。
-        passed=False 时 reason 描述拒绝原因。
+        返回 (passed, reason, clamped_signal)。
+        clamped_signal 在买入仓位超限截断时非空（含调整后的 percent/amount），
+        调用方需用其替换原 signal。
         """
         # 单日最大交易笔数
         max_trades = self._config.max_daily_trades
         if max_trades and self._daily_trade_count >= max_trades:
-            return False, f"当日交易笔数已达上限 {max_trades}"
+            return False, f"当日交易笔数已达上限 {max_trades}", None
 
         if signal.side == OrderSide.BUY:
-            passed, reason = self._check_buy(signal)
+            passed, reason, clamped = self._check_buy(signal)
         else:
             passed, reason = self._check_sell(signal)
+            clamped = None
 
         if passed:
             self._daily_trade_count += 1
-        return passed, reason
+        return passed, reason, clamped
 
-    def _check_buy(self, signal: Signal) -> tuple[bool, str]:
+    def _check_buy(self, signal: Signal) -> tuple[bool, str, Signal | None]:
         total_assets = self._portfolio.get_total_assets()
         cash = self._portfolio.get_cash()
         pos = self._portfolio.get_position(signal.symbol)
         pos_value = pos.market_value if pos else 0.0
+        clamped_signal: Signal | None = None
 
         # 计算本次买入金额（基于总资产，与执行器保持一致）
         buy_amount = self._calc_buy_amount(signal, total_assets)
 
         if buy_amount <= 0:
-            return False, "买入金额为零（资金不足或量 < 100 股）"
+            return False, "买入金额为零（资金不足或量 < 100 股）", None
 
         # 单股仓位上限：percent/amount 信号截断，quantity 信号拒绝
         max_allowed = total_assets * self._config.max_position_pct - pos_value
@@ -65,19 +68,24 @@ class PreTradeRisk:
             return False, (
                 f"单股仓位已达上限 {self._config.max_position_pct:.1%}"
                 f"（现有 {pos_value:,.0f}，上限 {total_assets * self._config.max_position_pct:,.0f}）"
-            )
+            ), None
         if buy_amount > max_allowed:
             if signal.quantity is not None:
                 return False, (
                     f"单股仓位将超过 {self._config.max_position_pct:.1%}"
                     f"（买入 {buy_amount:,.0f} + 现有 {pos_value:,.0f} > 上限 {total_assets * self._config.max_position_pct:,.0f}）"
-                )
-            # percent/amount 信号：截断到上限
+                ), None
+            # percent/amount 信号：创建截断后的新 Signal（原 Signal 是 frozen）
             clamped_pct = max_allowed / total_assets if total_assets > 0 else 0
-            if signal.percent is not None:
-                signal.percent = clamped_pct
-            elif signal.amount is not None:
-                signal.amount = max_allowed
+            clamped_signal = Signal(
+                signal_id=signal.signal_id,
+                symbol=signal.symbol,
+                side=signal.side,
+                order_type=signal.order_type,
+                percent=clamped_pct,
+                limit_price=signal.limit_price,
+                created_at=signal.created_at,
+            )
             buy_amount = max_allowed
             logger.debug(
                 f"风控截断 {signal.symbol} 买入仓位 → {clamped_pct:.1%}"
@@ -89,7 +97,7 @@ class PreTradeRisk:
             return False, (
                 f"可用现金不足（现金 {cash:.0f} - 已预留 {self._reserved_cash:.0f} = "
                 f"{available_cash:.0f}，需要 {buy_amount:.0f}）"
-            )
+            ), None
 
         # 买入后现金储备检查
         remaining = available_cash - buy_amount
@@ -97,27 +105,27 @@ class PreTradeRisk:
         if remaining < min_reserve:
             return False, (
                 f"买入后现金 {remaining:.0f} 低于最低储备 {min_reserve:.0f}"
-            )
+            ), None
 
         # 通过风控，预留该笔资金（防止同日其他信号双花）
         self._reserved_cash += buy_amount
-        return True, ""
+        return True, "", clamped_signal
 
-    def _check_sell(self, signal: Signal) -> tuple[bool, str]:
+    def _check_sell(self, signal: Signal) -> tuple[bool, str, None]:
         pos = self._portfolio.get_position(signal.symbol)
         if pos is None:
-            return False, f"无持仓: {signal.symbol}"
+            return False, f"无持仓: {signal.symbol}", None
 
         sell_qty = self._calc_sell_qty(signal, pos.tradeable_qty)
         if sell_qty <= 0:
-            return False, "卖出数量为零"
+            return False, "卖出数量为零", None
 
         if pos.tradeable_qty < sell_qty:
             return False, (
                 f"T+1限制: 请求卖出 {sell_qty} 股，可卖 {pos.tradeable_qty} 股"
-            )
+            ), None
 
-        return True, ""
+        return True, "", None
 
     def _calc_buy_amount(self, signal: Signal, total_assets: float) -> float:
         if signal.quantity is not None:

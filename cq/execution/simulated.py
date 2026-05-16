@@ -47,11 +47,14 @@ class SimulatedExecutor:
         signal = event.signal
 
         # 风控检查
-        passed, reason = self._risk.check(signal)
+        passed, reason, clamped = self._risk.check(signal)
         if not passed:
             self._bus.put(RejectEvent(order_id=signal.signal_id, reason=reason))
             logger.debug(f"信号被风控拒绝 {signal.symbol}: {reason}")
             return
+        # 风控截断了仓位，用新 signal 替换
+        if clamped is not None:
+            signal = clamped
 
         # 计算具体股数
         quantity = self._resolve_quantity(signal)

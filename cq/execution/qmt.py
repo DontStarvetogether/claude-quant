@@ -132,11 +132,13 @@ class QMTExecutor:
         signal = event.signal
 
         # 风控检查
-        passed, reason = self._risk.check(signal)
+        passed, reason, clamped = self._risk.check(signal)
         if not passed:
             self.event_queue.put(RejectEvent(order_id=signal.signal_id, reason=reason))
             logger.debug(f"信号被风控拒绝 {signal.symbol}: {reason}")
             return
+        if clamped is not None:
+            signal = clamped
 
         quantity = self._resolve_quantity(signal)
         if quantity <= 0:
