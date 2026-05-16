@@ -35,13 +35,31 @@
       <!-- 股票代码 -->
       <div>
         <label class="block text-sm text-gray-400 mb-1">股票代码</label>
-        <div class="flex gap-2 mb-2">
-          <input id="symbol-input" type="text" placeholder="如 600519.SH，回车添加"
-            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <input id="symbol-input" type="text" placeholder="代码或公司名，如 茅台 / 600519"
+              autocomplete="off"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+            <div id="symbol-dropdown"
+              class="hidden absolute z-50 left-0 right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-56 overflow-y-auto"></div>
+          </div>
           <button id="add-symbol-btn" type="button"
             class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">添加</button>
         </div>
-        <div id="symbol-tags" class="flex flex-wrap gap-2 min-h-6"></div>
+        <div id="symbol-tags" class="flex flex-wrap gap-2 min-h-6 mt-2"></div>
+        <!-- 常用股票 -->
+        <div class="flex items-center justify-between mt-3 mb-1.5">
+          <span class="text-xs text-gray-500">常用股票</span>
+          <button type="button" id="quick-toggle-expand-btn"
+            class="text-xs text-blue-400 hover:text-blue-300 transition-colors">展开全部</button>
+        </div>
+        <div id="quick-symbol-container" class="flex gap-2 flex-wrap"></div>
+        <div class="flex gap-3 mt-2">
+          <button type="button" id="select-all-btn"
+            class="text-xs text-blue-400 hover:text-blue-300 transition-colors">全选</button>
+          <button type="button" id="clear-all-btn"
+            class="text-xs text-gray-500 hover:text-gray-300 transition-colors">清空</button>
+        </div>
       </div>
 
       <!-- 日期 + 资金 -->
@@ -129,9 +147,15 @@
   // ── 初始化 ────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
     initDates();
+    // 加载股票池和策略
+    try {
+      const symRes = await API.getSymbols();
+      allCompareSymbols = symRes.symbols || [];
+    } catch(e) { allCompareSymbols = []; }
+    renderQuickSymbols();
     allStrategies = (await API.getStrategies()).strategies;
-    addStrategyRow();  // 默认添加一行
-    addStrategyRow();  // 再加一行，方便直接对比
+    addStrategyRow();
+    addStrategyRow();
     setupSymbolInput();
     document.getElementById('add-strategy-btn').addEventListener('click', addStrategyRow);
     document.getElementById('run-btn').addEventListener('click', runAll);
@@ -157,30 +181,79 @@
   }
 
   // ── 股票输入 ──────────────────────────────────────────────────────────────
+  let allCompareSymbols = [];
+  let quickExpanded = false;
+  const QUICK_LIMIT = 25;
+
   function setupSymbolInput() {
+    // 搜索下拉
     const input = document.getElementById('symbol-input');
+    const dropdown = document.getElementById('symbol-dropdown');
     const btn = document.getElementById('add-symbol-btn');
-    const add = () => {
-      const sym = input.value.trim().toUpperCase();
-      if (!sym) return;
-      if (!/^\d{6}\.(SH|SZ|BJ)$/i.test(sym)) {
-        showError(`格式不正确：${sym}（期望如 600519.SH）`); return;
-      }
-      selectedSymbols.add(sym);
-      renderSymbolTags();
-      input.value = '';
-    };
-    btn.addEventListener('click', add);
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    let activeIdx = -1;
+
+    function getMatches(q) {
+      if (!q) return [];
+      const t = q.toLowerCase();
+      return allCompareSymbols.filter(s => s.symbol.toLowerCase().includes(t) || (s.name && s.name.toLowerCase().includes(t))).slice(0, 12);
+    }
+
+    input.addEventListener('input', () => {
+      const matches = getMatches(input.value.trim());
+      activeIdx = -1;
+      if (!matches.length) { dropdown.classList.add('hidden'); return; }
+      dropdown.innerHTML = matches.map((s, i) => `<div class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-700 text-sm" onmousedown="event.preventDefault();selectCompareSymbol('${s.symbol}')"><span class="font-mono text-gray-300">${s.symbol}</span><span class="text-gray-400 text-xs ml-3">${s.name || ''}</span></div>`).join('');
+      dropdown.classList.remove('hidden');
+    });
+
+    input.addEventListener('keydown', e => {
+      const items = dropdown.querySelectorAll('div');
+      const hl = idx => { items.forEach(el => el.classList.remove('bg-gray-700')); if (idx >= 0 && items[idx]) items[idx].classList.add('bg-gray-700'); };
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); hl(activeIdx); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, -1); hl(activeIdx); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (activeIdx >= 0 && items[activeIdx]) items[activeIdx].click();
+        else { const v = input.value.trim(); if (v) { addCompareSymbol(normalizeSym(v)); input.value = ''; dropdown.classList.add('hidden'); } }
+      } else if (e.key === 'Escape') { dropdown.classList.add('hidden'); activeIdx = -1; }
+    });
+    input.addEventListener('blur', () => setTimeout(() => dropdown.classList.add('hidden'), 150));
+
+    btn.addEventListener('click', () => {
+      const v = input.value.trim();
+      if (!v) return;
+      const matches = getMatches(v);
+      if (matches.length === 1) selectCompareSymbol(matches[0].symbol);
+      else { addCompareSymbol(normalizeSym(v)); input.value = ''; dropdown.classList.add('hidden'); }
+    });
+
+    // 常用股票
+    document.getElementById('quick-toggle-expand-btn')?.addEventListener('click', () => { quickExpanded = !quickExpanded; renderQuickSymbols(); });
+    document.getElementById('select-all-btn')?.addEventListener('click', () => { allCompareSymbols.slice(0, 50).forEach(s => selectedSymbols.add(s.symbol)); renderSymbolTags(); });
+    document.getElementById('clear-all-btn')?.addEventListener('click', () => { selectedSymbols.clear(); renderSymbolTags(); });
+  }
+
+  function normalizeSym(s) { s = s.trim().toUpperCase(); if (/^\d{6}$/.test(s)) return s.startsWith('6') ? s + '.SH' : s + '.SZ'; return s; }
+  function selectCompareSymbol(sym) { addCompareSymbol(sym); document.getElementById('symbol-input').value = ''; document.getElementById('symbol-dropdown').classList.add('hidden'); }
+  function addCompareSymbol(sym) { if (!sym) return; selectedSymbols.add(sym.toUpperCase()); renderSymbolTags(); }
+
+  function renderQuickSymbols() {
+    const c = document.getElementById('quick-symbol-container');
+    if (!c || !allCompareSymbols.length) return;
+    const n = quickExpanded ? allCompareSymbols.length : QUICK_LIMIT;
+    const rem = allCompareSymbols.length - QUICK_LIMIT;
+    c.innerHTML = allCompareSymbols.slice(0, n).map(s => `<button type="button" onclick="addCompareSymbol('${s.symbol}')" class="px-2.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">${s.name || s.symbol}</button>`).join('');
+    const btn = document.getElementById('quick-toggle-expand-btn');
+    if (btn) btn.textContent = (!quickExpanded && rem > 0) ? `展开全部（+${rem}）` : '收起';
   }
 
   function renderSymbolTags() {
     const c = document.getElementById('symbol-tags');
-    c.innerHTML = [...selectedSymbols].map(sym => `
-      <span class="inline-flex items-center gap-1 px-3 py-1 bg-blue-900/40 border border-blue-700/50 rounded-full text-xs text-blue-300">
-        ${sym}
-        <button onclick="selectedSymbols.delete('${sym}');renderSymbolTags()" class="text-blue-500 hover:text-red-400 ml-1">×</button>
-      </span>`).join('');
+    if (selectedSymbols.size === 0) { c.innerHTML = '<span class="text-xs text-gray-600">请搜索并添加股票</span>'; return; }
+    c.innerHTML = [...selectedSymbols].map(sym => {
+      const info = allCompareSymbols.find(s => s.symbol === sym);
+      return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300"><span class="font-mono">${sym}</span>${info ? '<span class="text-gray-500">' + info.name + '</span>' : ''}<button onclick="event.stopPropagation();selectedSymbols.delete('${sym}');renderSymbolTags()" class="ml-1 text-gray-500 hover:text-red-400">&times;</button></span>`;
+    }).join('');
   }
 
   // ── 策略行 ────────────────────────────────────────────────────────────────
@@ -448,7 +521,7 @@
           params.filter(p => p.seriesName !== '基准（0%）').forEach(p => {
             if (p.value == null) return;
             const v = p.value;
-            const color = v >= 0 ? '#34d399' : '#f87171';
+            const color = v >= 0 ? '#ef4444' : '#22c55e';
             html += `<div style="display:flex;justify-content:space-between;gap:16px">
               <span>${p.marker}${p.seriesName}</span>
               <span style="color:${color};font-weight:600">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>
@@ -474,14 +547,14 @@
 
   function renderMetricsTable(results) {
     const METRICS = [
-      { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
-      { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#34d399' : '#f87171' },
-      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(v), colorFn: () => '#f87171' },
-      { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? '#34d399' : v >= 0 ? '#e5e7eb' : '#f87171' },
+      { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#ef4444' : '#22c55e' },
+      { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#ef4444' : '#22c55e' },
+      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(v), colorFn: () => '#22c55e' },
+      { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? '#ef4444' : v >= 0 ? '#e5e7eb' : '#22c55e' },
       { key: 'sortino_ratio',   label: '索提诺比率', fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
       { key: 'calmar_ratio',    label: '卡玛比率',   fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
-      { key: 'win_rate',        label: '胜率',       fmt: v => fmtPct(v), colorFn: v => v >= 0.5 ? '#34d399' : '#f87171' },
-      { key: 'profit_factor',   label: '盈亏比',     fmt: v => v.toFixed(2), colorFn: v => v >= 1 ? '#34d399' : '#f87171' },
+      { key: 'win_rate',        label: '胜率',       fmt: v => fmtPct(v), colorFn: v => v >= 0.5 ? '#ef4444' : '#22c55e' },
+      { key: 'profit_factor',   label: '盈亏比',     fmt: v => v.toFixed(2), colorFn: v => v >= 1 ? '#ef4444' : '#22c55e' },
       { key: 'total_trades',    label: '总交易次数', fmt: v => v + ' 笔', colorFn: () => '#e5e7eb' },
       { key: 'total_fees',      label: '总手续费',   fmt: v => fmtMoney(v), colorFn: () => '#fbbf24' },
       { key: 'final_value',     label: '最终净值',   fmt: v => fmtMoney(v), colorFn: () => '#e5e7eb' },

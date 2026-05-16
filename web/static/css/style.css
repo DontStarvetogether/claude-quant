@@ -1,8 +1,8 @@
 /* Claude Quant — 量化风格样式 */
 
 :root {
-  --color-up: #34d399;
-  --color-down: #f87171;
+  --color-up: #f87171;    /* A股：涨/盈利 = 红色 */
+  --color-down: #34d399;  /* A股：跌/亏损 = 绿色 */
   --color-neutral: #94a3b8;
 }
 

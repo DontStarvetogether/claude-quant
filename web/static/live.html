@@ -112,6 +112,20 @@
           </div>
           <!-- 已选标签 -->
           <div id="symbol-tags" class="flex gap-2 flex-wrap mt-2 min-h-[28px]"></div>
+
+          <!-- 常用股票 -->
+          <div class="flex items-center justify-between mt-3 mb-1.5">
+            <span class="text-xs text-gray-500">常用股票</span>
+            <button type="button" id="quick-toggle-expand-btn"
+              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">展开全部</button>
+          </div>
+          <div id="quick-symbol-container" class="flex gap-2 flex-wrap"></div>
+          <div class="flex gap-3 mt-2">
+            <button type="button" id="select-all-btn"
+              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">全选</button>
+            <button type="button" id="clear-all-btn"
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors">清空</button>
+          </div>
         </div>
       </form>
 
@@ -258,6 +272,6 @@
 
   </main>
 
-  <script src="/static/js/live.js?v=23"></script>
+  <script src="/static/js/live.js?v=24"></script>
 </body>
 </html>

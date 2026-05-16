@@ -184,6 +184,9 @@ function getStrategyParams() {
 
 // ── 股票搜索 ─────────────────────────────────────────────────────────────────
 
+let quickExpanded = false;
+const QUICK_DISPLAY = 25;
+
 async function loadAllSymbols() {
   try {
     const res = await fetch('/api/symbols?sync=false');
@@ -191,7 +194,42 @@ async function loadAllSymbols() {
     allSymbols = data.symbols || [];
   } catch (e) {
     console.error('加载股票池失败', e);
+    allSymbols = [
+      { symbol: '600519.SH', name: '贵州茅台' },
+      { symbol: '000858.SZ', name: '五粮液' },
+      { symbol: '601318.SH', name: '中国平安' },
+    ];
   }
+  renderQuickSymbols();
+  setupQuickButtons();
+}
+
+function renderQuickSymbols() {
+  const container = document.getElementById('quick-symbol-container');
+  if (!container || !allSymbols.length) return;
+  const count = quickExpanded ? allSymbols.length : QUICK_DISPLAY;
+  const remaining = allSymbols.length - QUICK_DISPLAY;
+  container.innerHTML = allSymbols.slice(0, count).map(s =>
+    `<button type="button" onclick="addSymbol('${s.symbol}')"
+      class="px-2.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">${s.name || s.symbol}</button>`
+  ).join('');
+  const expandBtn = document.getElementById('quick-toggle-expand-btn');
+  if (expandBtn) expandBtn.textContent = (!quickExpanded && remaining > 0) ? `展开全部（+${remaining}）` : '收起';
+}
+
+function setupQuickButtons() {
+  document.getElementById('quick-toggle-expand-btn')?.addEventListener('click', () => {
+    quickExpanded = !quickExpanded;
+    renderQuickSymbols();
+  });
+  document.getElementById('select-all-btn')?.addEventListener('click', () => {
+    allSymbols.slice(0, 50).forEach(s => selectedSymbols.add(s.symbol));
+    renderSymbolTags();
+  });
+  document.getElementById('clear-all-btn')?.addEventListener('click', () => {
+    selectedSymbols.clear();
+    renderSymbolTags();
+  });
 }
 
 function setupSymbolInput() {
@@ -722,7 +760,7 @@ function renderMonthlyReturns(equityArr) {
       type: 'bar', barMaxWidth: 24,
       data: monthly.map(m => ({
         value: +(m.ret * 100).toFixed(2),
-        itemStyle: { color: m.ret >= 0 ? '#22c55e' : '#ef4444', borderRadius: [2, 2, 0, 0] },
+        itemStyle: { color: m.ret >= 0 ? '#ef4444' : '#22c55e', borderRadius: [2, 2, 0, 0] },
       })),
     }],
   });
@@ -755,15 +793,15 @@ function _renderMonthlyHeatmap(monthly) {
 
   function cellColor(ret) {
     if (ret === undefined || ret === null) return { bg: '#111827', text: '#4b5563' };
-    if (ret >  0.05) return { bg: '#15803d', text: '#fff' };
-    if (ret >  0.02) return { bg: '#16a34a', text: '#fff' };
-    if (ret >  0.005) return { bg: '#22c55e', text: '#14532d' };
-    if (ret >  0)    return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret >  0.05) return { bg: '#991b1b', text: '#fff' };
+    if (ret >  0.02) return { bg: '#dc2626', text: '#fff' };
+    if (ret >  0.005) return { bg: '#ef4444', text: '#fff' };
+    if (ret >  0)    return { bg: '#fca5a5', text: '#7f1d1d' };
     if (ret === 0)   return { bg: '#1f2937', text: '#9ca3af' };
-    if (ret > -0.005) return { bg: '#fca5a5', text: '#7f1d1d' };
-    if (ret > -0.02) return { bg: '#ef4444', text: '#fff' };
-    if (ret > -0.05) return { bg: '#dc2626', text: '#fff' };
-    return { bg: '#991b1b', text: '#fff' };
+    if (ret > -0.005) return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret > -0.02) return { bg: '#22c55e', text: '#14532d' };
+    if (ret > -0.05) return { bg: '#16a34a', text: '#fff' };
+    return { bg: '#15803d', text: '#fff' };
   }
 
   const headerCells = months.map(m =>
@@ -983,7 +1021,7 @@ function updateEquityChart(trades, eqData) {
       ]
     : { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30, interval: Math.max(0, Math.floor(dates.length / 10) - 1) } };
 
-  // 买卖标记：红▲买入、绿▼卖出（A股习惯）
+  // 买卖标记：红▲买入、绿▼卖出（A股习惯），hover 显示详情
   const markPoint = hasDrawdown && trades && trades.length > 0 ? (() => {
     const dateToVal = {};
     dates.forEach((d, i) => { dateToVal[d] = assets[i]; });
@@ -991,15 +1029,18 @@ function updateEquityChart(trades, eqData) {
       const y = dateToVal[t.trade_date];
       if (y === undefined) return null;
       const isBuy = t.side === 'BUY';
+      const label = (isBuy ? '买入' : '卖出') + ' ' + t.symbol + ' ' + t.quantity + '股 @' + Fmt.price(t.price) + ' ' + Fmt.money(t.amount);
       return {
         coord: [t.trade_date, y],
+        name: label,
         symbol: 'triangle',
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 16,
         itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
+        emphasis: { label: { show: true, formatter: label, position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
       };
     }).filter(Boolean);
-    return { symbolSize: 12, label: { show: false }, data: markers };
+    return { symbolSize: 14, label: { show: false }, data: markers };
   })() : undefined;
 
   const series = [

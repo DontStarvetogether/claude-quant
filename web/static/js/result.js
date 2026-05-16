@@ -264,11 +264,14 @@ function _buildTradeMarkers(trades, curve) {
     const y = dateToVal[t.trade_date];
     if (y === undefined) return null;
     const isBuy = t.side === 'BUY';
+    const label = (isBuy ? '买入' : '卖出') + ' ' + t.symbol + ' ' + t.quantity + '股 @' + t.price.toFixed(2) + ' ' + Fmt.money(t.amount);
     return {
       coord: [t.trade_date, y],
+      name: label,
       symbol: 'triangle',
       symbolRotate: isBuy ? 0 : 180,
       itemStyle: { color: isBuy ? '#ef4444' : '#22c55e', borderWidth: 0 },
+      emphasis: { label: { show: true, formatter: label, position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
     };
   }).filter(Boolean);
 }

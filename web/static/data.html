@@ -77,6 +77,20 @@
             </div>
             <div id="dl-symbol-tags" class="flex gap-2 flex-wrap"></div>
           </div>
+          <!-- 常用股票 -->
+          <div class="flex items-center justify-between mt-3 mb-1.5">
+            <span class="text-xs text-gray-500">常用股票</span>
+            <button type="button" id="quick-toggle-expand-btn"
+              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">展开全部</button>
+          </div>
+          <div id="quick-symbol-container" class="flex gap-2 flex-wrap"></div>
+          <div class="flex gap-3 mt-2">
+            <button type="button" id="dl-select-all-btn"
+              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">全选</button>
+            <button type="button" id="dl-clear-all-2"
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors">清空</button>
+          </div>
+
           <!-- 隐藏字段，保存已选代码 -->
           <input id="dl-symbols" type="hidden" />
         </div>
@@ -571,7 +585,22 @@
 
     loadStats();
     loadTable();
-    loadAllSymbols().then(() => setupDlSymbolInput());
+    // 常用股票
+    let dlQuickExpanded = false;
+    const DL_QUICK_LIMIT = 25;
+    function dlRenderQuickSymbols() {
+      const c = document.getElementById('quick-symbol-container');
+      if (!c || !allSymbols.length) return;
+      const n = dlQuickExpanded ? allSymbols.length : DL_QUICK_LIMIT;
+      const rem = allSymbols.length - DL_QUICK_LIMIT;
+      c.innerHTML = allSymbols.slice(0, n).map(s => `<button type="button" onclick="dlAddSymbol('${s.symbol}')" class="px-2.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">${s.name || s.symbol}</button>`).join('');
+      const btn = document.getElementById('quick-toggle-expand-btn');
+      if (btn) btn.textContent = (!dlQuickExpanded && rem > 0) ? `展开全部（+${rem}）` : '收起';
+    }
+    loadAllSymbols().then(() => { setupDlSymbolInput(); dlRenderQuickSymbols(); });
+    document.getElementById('quick-toggle-expand-btn')?.addEventListener('click', () => { dlQuickExpanded = !dlQuickExpanded; dlRenderQuickSymbols(); });
+    document.getElementById('dl-select-all-btn')?.addEventListener('click', () => { dlSelectedSymbols = allSymbols.slice(0, 50).map(s => s.symbol); dlRenderTags(); });
+    document.getElementById('dl-clear-all-2')?.addEventListener('click', () => { dlSelectedSymbols = []; dlRenderTags(); });
   </script>
 </body>
 </html>
