@@ -54,6 +54,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSymbolInput();
   setupForm();
   await loadSessions();
+
+  // URL hash 路由：自动打开指定会话
+  const hash = window.location.hash.slice(1);
+  if (hash && hash.length >= 8) {
+    setTimeout(() => reconnectSession(hash), 500);
+  }
 });
 
 function setupModeToggle() {
@@ -925,6 +931,10 @@ async function deleteSession(sessionId) {
 
 async function reconnectSession(sessionId) {
   currentSessionId = sessionId;
+  // URL hash 路由，便于分享和区分
+  if (window.location.hash !== '#' + sessionId) {
+    history.replaceState(null, '', '#' + sessionId);
+  }
   const st = _ensure(sessionId);
 
   document.getElementById('start-btn').disabled = false;

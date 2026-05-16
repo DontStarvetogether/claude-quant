@@ -95,9 +95,8 @@ async def get_status(session_id: str) -> LiveSessionStatus:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # 从 DB 加载成交记录（最近 50 条）
+    # 从 DB 加载成交记录（停止的会话返回全部，便于完整查看）
     trades = db.get_trades(session_id)
-    recent_trades = trades[-50:] if len(trades) > 50 else trades
 
     # 从 DB 加载绩效指标
     payload = _load_metrics_from_db(session_id)
@@ -114,7 +113,7 @@ async def get_status(session_id: str) -> LiveSessionStatus:
         total_assets=d.get("total_assets"),
         cash=d.get("cash"),
         positions=positions,
-        recent_trades=recent_trades,
+        recent_trades=trades,
         elapsed_seconds=round(_get_elapsed(d, d), 1),
         metrics=metrics,
         equity_curve=equity_curve,
