@@ -99,6 +99,11 @@ async def get_status(session_id: str) -> LiveSessionStatus:
     trades = db.get_trades(session_id)
     recent_trades = trades[-50:] if len(trades) > 50 else trades
 
+    # 从 DB 加载绩效指标
+    payload = _load_metrics_from_db(session_id)
+    metrics = payload.get("metrics") if payload else None
+    equity_curve = payload.get("equity") if payload else None
+
     return LiveSessionStatus(
         session_id=d["session_id"],
         strategy_id=d["strategy_id"],
@@ -111,6 +116,8 @@ async def get_status(session_id: str) -> LiveSessionStatus:
         positions=positions,
         recent_trades=recent_trades,
         elapsed_seconds=round(_get_elapsed(d, d), 1),
+        metrics=metrics,
+        equity_curve=equity_curve,
         error=d.get("error"),
         started_at=d["started_at"],
     )
@@ -236,6 +243,17 @@ def _get_elapsed(s: object, d: dict | None = None) -> float:
     return 0.0
 
 
+def _load_metrics_from_db(session_id: str) -> dict | None:
+    """从 DB 加载会话的绩效指标和净值曲线数据。"""
+    d = db.get_session(session_id)
+    if not d or not d.get("metrics_json"):
+        return None
+    try:
+        return json.loads(d["metrics_json"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 # ── 内部工具 ──────────────────────────────────────────────────────────────────
 
 
@@ -244,6 +262,15 @@ def _to_status(s) -> LiveSessionStatus:
 
 
 def _to_status_dict(s) -> dict:
+    # 停止的会话尝试从 DB 加载绩效指标
+    metrics = None
+    equity_curve = None
+    if s.status in ("stopped", "failed"):
+        payload = _load_metrics_from_db(s.session_id)
+        if payload:
+            metrics = payload.get("metrics")
+            equity_curve = payload.get("equity")
+
     return {
         "session_id": s.session_id,
         "strategy_id": s.strategy_id,
@@ -256,6 +283,8 @@ def _to_status_dict(s) -> dict:
         "positions": list(s.positions),
         "recent_trades": list(s.recent_trades),
         "elapsed_seconds": round(s.elapsed_seconds, 1),
+        "metrics": metrics,
+        "equity_curve": equity_curve,
         "error": s.error,
         "started_at": s.started_at.isoformat(),
     }

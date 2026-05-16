@@ -175,10 +175,16 @@
       </div>
     </section>
 
+    <!-- 绩效指标卡片 -->
+    <section id="metrics-section" class="hidden mb-8">
+      <h3 class="text-sm font-semibold text-gray-300 mb-3">绩效指标</h3>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="metrics-cards"></div>
+    </section>
+
     <!-- 净值曲线（全宽） -->
     <section id="equity-section" class="hidden mb-8 -mx-6">
       <h3 class="text-sm font-semibold text-gray-300 mb-3 px-6">净值曲线</h3>
-      <div id="equity-chart" class="w-full bg-gray-900 border-y border-gray-800" style="height: 50vh; min-height: 320px;"></div>
+      <div id="equity-chart" class="w-full bg-gray-900 border-y border-gray-800" style="height: 55vh; min-height: 400px;"></div>
     </section>
 
     <!-- 持仓 + 成交 -->
@@ -207,7 +213,10 @@
 
       <!-- 成交流水 -->
       <section id="trades-section" class="hidden">
-        <h3 class="text-sm font-semibold text-gray-300 mb-3">最近成交</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-gray-300">成交记录 <span id="trades-count" class="text-xs text-gray-500 ml-1"></span></h3>
+          <button id="export-trades-btn" class="hidden px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">导出CSV</button>
+        </div>
         <div class="overflow-x-auto border border-gray-800 rounded-xl max-h-96 overflow-y-auto">
           <table class="w-full text-sm">
             <thead class="bg-gray-900 text-gray-500 text-xs sticky top-0">
@@ -218,6 +227,9 @@
                 <th class="px-3 py-2 text-right">价格</th>
                 <th class="px-3 py-2 text-right">数量</th>
                 <th class="px-3 py-2 text-right">金额</th>
+                <th class="px-3 py-2 text-right">佣金</th>
+                <th class="px-3 py-2 text-right">印花税</th>
+                <th class="px-3 py-2 text-right">净额</th>
               </tr>
             </thead>
             <tbody id="trades-body" class="divide-y divide-gray-800"></tbody>
@@ -237,6 +249,6 @@
 
   </main>
 
-  <script src="/static/js/live.js?v=19"></script>
+  <script src="/static/js/live.js?v=20"></script>
 </body>
 </html>

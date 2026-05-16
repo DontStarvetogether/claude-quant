@@ -46,7 +46,8 @@ def init_db() -> None:
             started_at   TEXT NOT NULL,
             finished_at  TEXT,
             elapsed_seconds REAL NOT NULL DEFAULT 0,
-            final_positions TEXT                     -- JSON: 结束时持仓快照
+            final_positions TEXT,                    -- JSON: 结束时持仓快照
+            metrics_json    TEXT                     -- JSON: 绩效指标快照
         );
 
         CREATE TABLE IF NOT EXISTS trades (
@@ -82,6 +83,7 @@ def init_db() -> None:
     for col, ddl in [
         ("elapsed_seconds", "ALTER TABLE sessions ADD COLUMN elapsed_seconds REAL NOT NULL DEFAULT 0"),
         ("final_positions", "ALTER TABLE sessions ADD COLUMN final_positions TEXT"),
+        ("metrics_json", "ALTER TABLE sessions ADD COLUMN metrics_json TEXT"),
     ]:
         try:
             conn.execute(ddl)
@@ -124,6 +126,7 @@ def update_session_status(
     error: str | None = None,
     elapsed_seconds: float = 0.0,
     positions_json: str | None = None,
+    metrics_json: str | None = None,
 ) -> None:
     import json as _json
     conn = _get_conn()
@@ -132,10 +135,11 @@ def update_session_status(
         """UPDATE sessions
            SET status=?, total_assets=?, cash=?, error=?, finished_at=COALESCE(?, finished_at),
                elapsed_seconds=MAX(elapsed_seconds, ?),
-               final_positions=COALESCE(?, final_positions)
+               final_positions=COALESCE(?, final_positions),
+               metrics_json=COALESCE(?, metrics_json)
            WHERE session_id=?""",
         (status, total_assets, cash, error, finished, elapsed_seconds,
-         positions_json, session_id),
+         positions_json, metrics_json, session_id),
     )
     conn.commit()
 

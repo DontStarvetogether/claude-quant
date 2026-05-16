@@ -486,8 +486,12 @@ function showStatusSection() {
   document.getElementById('status-section').classList.remove('hidden');
   document.getElementById('positions-section').classList.remove('hidden');
   document.getElementById('trades-section').classList.remove('hidden');
-  // 折叠配置区，让图表更醒目
   document.getElementById('config-section').removeAttribute('open');
+}
+
+function showMetricsSection() {
+  document.getElementById('metrics-section').classList.remove('hidden');
+  document.getElementById('equity-section').classList.remove('hidden');
 }
 
 function updateDashboard(data) {
@@ -520,6 +524,11 @@ function updateDashboard(data) {
   document.getElementById('status-cash').textContent = Fmt.money(data.cash);
   document.getElementById('status-elapsed').textContent = (data.elapsed_seconds || 0).toFixed(1) + 's';
 
+  // 绩效指标卡片
+  if (data.metrics) {
+    renderMetricsCards(data.metrics);
+  }
+
   // 持仓表格
   const posBody = document.getElementById('positions-body');
   if (data.positions && data.positions.length > 0) {
@@ -541,10 +550,19 @@ function updateDashboard(data) {
 
   // 成交流水
   const tradeBody = document.getElementById('trades-body');
-  if (data.recent_trades && data.recent_trades.length > 0) {
-    tradeBody.innerHTML = data.recent_trades.map(t => {
+  const tradeCount = document.getElementById('trades-count');
+  const exportBtn = document.getElementById('export-trades-btn');
+  const allTrades = data.recent_trades || [];
+  if (allTrades.length > 0) {
+    tradeCount.textContent = `共 ${allTrades.length} 笔`;
+    exportBtn.classList.remove('hidden');
+    exportBtn.onclick = () => exportTradesCSV(allTrades);
+    tradeBody.innerHTML = allTrades.map(t => {
       const sideColor = t.side === 'BUY' ? 'text-red-400' : 'text-green-400';
       const sideText = t.side === 'BUY' ? '买入' : '卖出';
+      const net = t.side === 'BUY'
+        ? -(t.amount + (t.commission || 0))
+        : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
       return `<tr class="hover:bg-gray-800/50">
         <td class="px-3 py-2 text-left text-gray-400">${t.trade_date}</td>
         <td class="px-3 py-2 text-left text-gray-200">${t.symbol}</td>
@@ -552,11 +570,58 @@ function updateDashboard(data) {
         <td class="px-3 py-2 text-right">${Fmt.price(t.price)}</td>
         <td class="px-3 py-2 text-right">${t.quantity}</td>
         <td class="px-3 py-2 text-right">${Fmt.money(t.amount)}</td>
+        <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.commission)}</td>
+        <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.stamp_tax)}</td>
+        <td class="px-3 py-2 text-right ${net >= 0 ? 'text-red-400' : 'text-green-400'}">${Fmt.money(net)}</td>
       </tr>`;
     }).join('');
   } else {
-    tradeBody.innerHTML = '<tr><td colspan="6" class="px-3 py-4 text-center text-gray-600">暂无成交</td></tr>';
+    tradeCount.textContent = '';
+    exportBtn.classList.add('hidden');
+    tradeBody.innerHTML = '<tr><td colspan="9" class="px-3 py-4 text-center text-gray-600">暂无成交</td></tr>';
   }
+}
+
+function renderMetricsCards(m) {
+  showMetricsSection();
+  const cards = document.getElementById('metrics-cards');
+
+  const items = [
+    { label: '总收益率', value: Fmt.pct(m.total_return), color: m.total_return >= 0 ? 'text-red-400' : 'text-green-400' },
+    { label: '年化收益率', value: Fmt.pct(m.annual_return), color: m.annual_return >= 0 ? 'text-red-400' : 'text-green-400' },
+    { label: '最大回撤', value: Fmt.pct(m.max_drawdown), color: 'text-green-400' },
+    { label: '夏普比率', value: (m.sharpe_ratio || 0).toFixed(3), color: m.sharpe_ratio >= 1 ? 'text-green-400' : 'text-gray-300' },
+    { label: '胜率', value: Fmt.pct(m.win_rate), color: 'text-gray-200' },
+    { label: '总交易次数', value: m.total_trades || 0, color: 'text-gray-200' },
+    { label: '总手续费', value: Fmt.money(m.total_fees), color: 'text-gray-400' },
+    { label: '盈亏比', value: (m.profit_factor || 0).toFixed(2), color: m.profit_factor >= 1.5 ? 'text-green-400' : 'text-gray-200' },
+  ];
+
+  cards.innerHTML = items.map(i => `
+    <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+      <p class="text-[10px] text-gray-500 uppercase tracking-wide">${i.label}</p>
+      <p class="text-lg font-semibold mt-0.5 ${i.color}">${i.value}</p>
+    </div>
+  `).join('');
+}
+
+function exportTradesCSV(trades) {
+  const header = '交易ID,日期,代码,方向,价格,数量,金额,佣金,印花税,净额';
+  const rows = trades.map(t => {
+    const net = t.side === 'BUY'
+      ? -(t.amount + (t.commission || 0))
+      : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
+    return [t.trade_id || '', t.trade_date, t.symbol, t.side === 'BUY' ? '买入' : '卖出',
+      t.price, t.quantity, t.amount,
+      (t.commission || 0).toFixed(2), (t.stamp_tax || 0).toFixed(2), net.toFixed(2)
+    ].join(',');
+  });
+  const csv = '\uFEFF' + header + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `trades_${currentSessionId || 'export'}.csv`;
+  a.click(); URL.revokeObjectURL(url);
 }
 
 // ── 历史会话 ─────────────────────────────────────────────────────────────────
@@ -630,8 +695,19 @@ async function reconnectSession(sessionId) {
       onSessionEnd(data.status);
     }
 
-    // 加载历史净值曲线
-    await loadEquityCurve(sessionId);
+    // 加载净值曲线（优先用 status 中携带的完整数据）
+    if (data.equity_curve && data.equity_curve.dates && data.equity_curve.dates.length > 0) {
+      equityData = data.equity_curve.dates.map((d, i) => ({
+        date: d,
+        total_assets: data.equity_curve.values[i],
+        cash: 0,
+        drawdown: data.equity_curve.drawdown ? data.equity_curve.drawdown[i] : 0,
+      }));
+      initEquityChart();
+      updateEquityChart();
+    } else {
+      await loadEquityCurve(sessionId);
+    }
   } catch (e) {
     console.error('重连失败', e);
   }
@@ -650,16 +726,66 @@ function initEquityChart() {
 
 function updateEquityChart() {
   if (equityData.length === 0) return;
-  // 先显示容器，再初始化/resize（否则 ECharts 拿不到尺寸）
   document.getElementById('equity-section').classList.remove('hidden');
   initEquityChart();
   equityChart.resize();
 
   const dates = equityData.map(d => d.date);
   const assets = equityData.map(d => d.total_assets);
-
-  // 初始资金基准线
   const initialCapital = assets[0] || 1000000;
+
+  // 是否有回撤数据
+  const hasDrawdown = equityData.some(d => d.drawdown !== undefined && d.drawdown !== null);
+  const grid = hasDrawdown
+    ? [
+        { left: 60, right: 16, top: 40, height: '55%' },
+        { left: 60, right: 16, top: '68%', height: '18%' },
+      ]
+    : [{ left: 60, right: 16, top: 40, bottom: 50 }];
+
+  const yAxis = hasDrawdown
+    ? [
+        { type: 'value', axisLabel: { color: '#6b7280', formatter: v => (v / 10000).toFixed(0) + '万' }, splitLine: { lineStyle: { color: '#1f2937' } } },
+        { type: 'value', gridIndex: 1, axisLabel: { color: '#6b7280', formatter: v => (v * 100).toFixed(0) + '%' }, splitLine: { lineStyle: { color: '#1f2937' } } },
+      ]
+    : [{ type: 'value', axisLabel: { color: '#6b7280', formatter: v => (v / 10000).toFixed(0) + '万' }, splitLine: { lineStyle: { color: '#1f2937' } } }];
+
+  const dataZoom = (() => {
+    const defaultStart = dates.length > 200 ? Math.round((1 - 200 / dates.length) * 100) : 0;
+    const zooms = [
+      { type: 'inside', xAxisIndex: 0, start: defaultStart, end: 100 },
+      { type: 'slider', xAxisIndex: 0, bottom: hasDrawdown ? '13%' : 8, height: 20,
+        start: defaultStart, end: 100,
+        borderColor: '#374151', fillerColor: 'rgba(59,130,246,0.15)',
+        textStyle: { color: '#6b7280', fontSize: 10 } },
+    ];
+    return zooms;
+  })();
+
+  const xAxis = hasDrawdown
+    ? [
+        { type: 'category', data: dates, boundaryGap: false, gridIndex: 0, axisLabel: { show: false } },
+        { type: 'category', data: dates, boundaryGap: false, gridIndex: 1, axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30, interval: Math.max(0, Math.floor(dates.length / 10) - 1) } },
+      ]
+    : { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30, interval: Math.max(0, Math.floor(dates.length / 10) - 1) } };
+
+  const series = [
+    { name: '总资产', type: 'line', data: assets, smooth: true, symbol: 'none', xAxisIndex: 0, yAxisIndex: 0,
+      lineStyle: { width: 2 }, itemStyle: { color: '#34d399' },
+    },
+    { name: '初始资金', type: 'line', data: dates.map(() => initialCapital), symbol: 'none', xAxisIndex: 0, yAxisIndex: 0,
+      lineStyle: { width: 1, type: 'dashed', color: '#6b7280' }, itemStyle: { color: '#6b7280' },
+    },
+  ];
+
+  if (hasDrawdown) {
+    const dd = equityData.map(d => d.drawdown || 0);
+    series.push({
+      name: '回撤', type: 'line', data: dd, smooth: true, symbol: 'none', xAxisIndex: 1, yAxisIndex: 1,
+      lineStyle: { width: 1 }, itemStyle: { color: '#f87171' },
+      areaStyle: { color: 'rgba(248,113,113,0.15)' },
+    });
+  }
 
   equityChart.setOption({
     backgroundColor: 'transparent',
@@ -668,9 +794,12 @@ function updateEquityChart() {
       formatter: params => {
         let s = `<b>${params[0].axisValue}</b><br/>`;
         params.forEach(p => {
-          s += `${p.marker} ${p.seriesName}: ${Fmt.money(p.value)}<br/>`;
+          if (p.seriesName === '回撤') {
+            s += `${p.marker} ${p.seriesName}: ${(p.value * 100).toFixed(2)}%<br/>`;
+          } else {
+            s += `${p.marker} ${p.seriesName}: ${Fmt.money(p.value)}<br/>`;
+          }
         });
-        // 追加收益率
         const asset = params.find(p => p.seriesName === '总资产');
         const base = params.find(p => p.seriesName === '初始资金');
         if (asset && base && base.value > 0) {
@@ -681,39 +810,8 @@ function updateEquityChart() {
         return s;
       },
     },
-    legend: { data: ['总资产', '初始资金'], top: 8, textStyle: { color: '#9ca3af' } },
-    grid: { top: 40, right: 16, bottom: 50, left: 60 },
-    dataZoom: (() => {
-      // 数据量大时默认只显示最近200个交易日，少于200则全量
-      const defaultStart = dates.length > 200 ? Math.round((1 - 200 / dates.length) * 100) : 0;
-      return [
-        { type: 'inside', xAxisIndex: 0, start: defaultStart, end: 100 },
-        { type: 'slider', xAxisIndex: 0, bottom: 8, height: 20,
-          start: defaultStart, end: 100,
-          borderColor: '#374151', fillerColor: 'rgba(59,130,246,0.15)',
-          textStyle: { color: '#6b7280', fontSize: 10 } },
-      ];
-    })(),
-    xAxis: {
-      type: 'category', data: dates, boundaryGap: false,
-      axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30,
-        interval: Math.max(0, Math.floor(dates.length / 10) - 1) },
-    },
-    yAxis: {
-      type: 'value',
-      min: function(value) { var pad = (value.max - value.min) * 0.1; return Math.max(0, Math.floor((value.min - pad) / 10000) * 10000); },
-      max: function(value) { var pad = (value.max - value.min) * 0.1; return Math.ceil((value.max + pad) / 10000) * 10000; },
-      axisLabel: { color: '#6b7280', formatter: v => (v / 10000).toFixed(0) + '万' },
-      splitLine: { lineStyle: { color: '#1f2937' } },
-    },
-    series: [
-      { name: '总资产', type: 'line', data: assets, smooth: true, symbol: 'none',
-        lineStyle: { width: 2 }, itemStyle: { color: '#34d399' },
-      },
-      { name: '初始资金', type: 'line', data: dates.map(() => initialCapital), symbol: 'none',
-        lineStyle: { width: 1, type: 'dashed', color: '#6b7280' }, itemStyle: { color: '#6b7280' },
-      },
-    ],
+    legend: { data: hasDrawdown ? ['总资产', '初始资金', '回撤'] : ['总资产', '初始资金'], top: 8, textStyle: { color: '#9ca3af' } },
+    grid, xAxis, yAxis, dataZoom, series,
   });
 }
 

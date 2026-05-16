@@ -19,8 +19,10 @@ from typing import Any, Optional
 from loguru import logger
 
 from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, RejectEvent
+from cq.core.models import OrderSide, Trade
 from cq.data.store.parquet_store import ParquetStore
 from cq.live.engine import LiveEngine
+from cq.performance.metrics import PerformanceMetrics
 from cq.utils.config import Config
 from web.runner import BUILTIN_STRATEGIES, load_strategy, _ensure_data
 from web import db
@@ -229,11 +231,16 @@ def _run_paper(
         if session.status != "stopped":
             session.status = "stopped"
         session.elapsed_seconds = time.monotonic() - session._start_time
+
+        metrics_payload = _compute_metrics(session.session_id)
+        metrics_json = json.dumps(metrics_payload, ensure_ascii=False) if metrics_payload else None
+
         db.update_session_status(
             session.session_id, "stopped",
             total_assets=session.total_assets, cash=session.cash,
             elapsed_seconds=session.elapsed_seconds,
             positions_json=_serialize_positions(session),
+            metrics_json=metrics_json,
         )
         logger.info(f"模拟盘结束 session={session.session_id}")
 
@@ -241,9 +248,14 @@ def _run_paper(
         session.status = "failed"
         session.error = str(e)
         session.elapsed_seconds = time.monotonic() - session._start_time
+
+        metrics_payload = _compute_metrics(session.session_id)
+        metrics_json = json.dumps(metrics_payload, ensure_ascii=False) if metrics_payload else None
+
         db.update_session_status(session.session_id, "failed", error=str(e),
                                  elapsed_seconds=session.elapsed_seconds,
-                                 positions_json=_serialize_positions(session))
+                                 positions_json=_serialize_positions(session),
+                                 metrics_json=metrics_json)
         logger.error(f"模拟盘异常 session={session.session_id}: {e}")
 
 
@@ -296,11 +308,16 @@ def _run_live(
         if session.status != "stopped":
             session.status = "stopped"
         session.elapsed_seconds = time.monotonic() - session._start_time
+
+        metrics_payload = _compute_metrics(session.session_id)
+        metrics_json = json.dumps(metrics_payload, ensure_ascii=False) if metrics_payload else None
+
         db.update_session_status(
             session.session_id, "stopped",
             total_assets=session.total_assets, cash=session.cash,
             elapsed_seconds=session.elapsed_seconds,
             positions_json=_serialize_positions(session),
+            metrics_json=metrics_json,
         )
         logger.info(f"实盘结束 session={session.session_id}")
 
@@ -308,9 +325,14 @@ def _run_live(
         session.status = "failed"
         session.error = str(e)
         session.elapsed_seconds = time.monotonic() - session._start_time
+
+        metrics_payload = _compute_metrics(session.session_id)
+        metrics_json = json.dumps(metrics_payload, ensure_ascii=False) if metrics_payload else None
+
         db.update_session_status(session.session_id, "failed", error=str(e),
                                  elapsed_seconds=session.elapsed_seconds,
-                                 positions_json=_serialize_positions(session))
+                                 positions_json=_serialize_positions(session),
+                                 metrics_json=metrics_json)
         logger.error(f"实盘异常 session={session.session_id}: {e}")
 
 
@@ -379,6 +401,86 @@ def _sync_portfolio_state(session: LiveSession, engine: LiveEngine) -> None:
         }
         for p in positions.values()
     ]
+
+
+def _compute_metrics(session_id: str) -> dict | None:
+    """从 DB 加载净值曲线和成交记录，计算绩效指标。
+    返回 {"metrics": {...}, "equity": {dates/values/drawdown}} 或 None。"""
+    import json
+    import pandas as pd
+    from datetime import datetime
+
+    equity_rows = db.get_equity_curve(session_id)
+    trade_rows = db.get_trades(session_id)
+
+    if not equity_rows or len(equity_rows) < 2:
+        return None
+
+    # 构建 equity_curve (pd.Series)
+    dates = [r["trade_date"] for r in equity_rows]
+    values = [r["total_assets"] for r in equity_rows]
+    equity_curve = pd.Series(values, index=pd.to_datetime(dates))
+
+    # 构建 Trade 对象列表
+    trades: list[Trade] = []
+    for t in trade_rows:
+        try:
+            trade = Trade(
+                trade_id=t.get("trade_id", ""),
+                order_id=t.get("trade_id", ""),
+                symbol=t["symbol"],
+                side=OrderSide.BUY if t["side"] == "BUY" else OrderSide.SELL,
+                quantity=t["quantity"],
+                price=t["price"],
+                amount=t["amount"],
+                commission=t.get("commission", 0),
+                stamp_tax=t.get("stamp_tax", 0),
+                trade_time=datetime.fromisoformat(t["trade_date"]),
+                trade_date=datetime.fromisoformat(t["trade_date"]).date(),
+            )
+            trades.append(trade)
+        except Exception:
+            pass
+
+    try:
+        metrics = PerformanceMetrics().compute(equity_curve, trades)
+    except Exception as e:
+        logger.error(f"计算绩效指标失败 session={session_id}: {e}")
+        return None
+
+    # 指标字典
+    metrics_dict = metrics.to_dict()
+    metrics_dict["max_drawdown_start"] = (
+        str(metrics.max_drawdown_start) if metrics.max_drawdown_start else None
+    )
+    metrics_dict["max_drawdown_end"] = (
+        str(metrics.max_drawdown_end) if metrics.max_drawdown_end else None
+    )
+
+    # 最终净值拆分
+    last_row = equity_rows[-1]
+    metrics_dict["final_cash"] = last_row.get("cash", 0)
+    metrics_dict["final_position_value"] = last_row.get("position_value", 0)
+
+    # 费用拆分
+    metrics_dict["total_commission"] = round(sum(
+        t.get("commission", 0) for t in trade_rows
+    ), 2)
+    metrics_dict["total_stamp_tax"] = round(sum(
+        t.get("stamp_tax", 0) for t in trade_rows
+    ), 2)
+
+    # 净值曲线 + 回撤序列（供前端图表使用）
+    rolling_max = equity_curve.cummax()
+    drawdown = ((equity_curve - rolling_max) / rolling_max).fillna(0)
+
+    equity_data = {
+        "dates": [str(d.date()) if hasattr(d, 'date') else str(d) for d in equity_curve.index],
+        "values": [round(v, 2) for v in equity_curve.values],
+        "drawdown": [round(float(d), 6) for d in drawdown.values],
+    }
+
+    return {"metrics": metrics_dict, "equity": equity_data}
 
 
 def _serialize_positions(session: LiveSession) -> str:
