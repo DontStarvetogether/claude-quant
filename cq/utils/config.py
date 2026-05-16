@@ -25,7 +25,7 @@ class EngineConfig:
     stamp_tax_rate: float = 0.001
     min_commission: float = 5.0
     slippage: float = 0.0
-    adjust: str = "qfq"  # "qfq"=静态前复权, "dynamic"=动态复权
+    adjust: str = "dynamic"  # "dynamic"=动态复权（推荐）, "qfq"=静态前复权
 
 
 @dataclass

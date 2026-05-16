@@ -50,7 +50,7 @@ class BacktestRequest(BaseModel):
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     risk: RiskParams = Field(default_factory=RiskParams)
     slippage: float = Field(default=0.0, ge=0.0, le=0.01)
-    adjust: str = Field(default="qfq", pattern="^(qfq|dynamic)$")
+    adjust: str = Field(default="dynamic", pattern="^(qfq|dynamic)$")
 
 
 class BacktestSubmitResponse(BaseModel):

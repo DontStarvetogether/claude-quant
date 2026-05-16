@@ -105,7 +105,7 @@ def submit_backtest(
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
     slippage: float = 0.0,
-    adjust: str = "qfq",
+    adjust: str = "dynamic",
     config_path: str = "config/local.yaml",
 ) -> None:
     """提交回测任务到线程池（非阻塞）。"""

@@ -323,7 +323,10 @@ class LiveEngine:
         if self._strategy is None:
             raise RuntimeError("请先调用 add_strategy()")
 
-        hist_feed = HistoricalFeed(store, self._symbols, history_start, history_end)
+        hist_feed = HistoricalFeed(
+            store, self._symbols, history_start, history_end,
+            adjust=self._config.engine.adjust,
+        )
         bus = EventBus()
         portfolio = PortfolioManager(self._config.engine)
         risk = PreTradeRisk(portfolio, self._config.risk)
