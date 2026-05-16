@@ -223,6 +223,7 @@ class LiveSessionStatus(BaseModel):
     positions: list[LivePositionItem] = Field(default_factory=list)
     recent_trades: list[LiveTradeItem] = Field(default_factory=list)
     elapsed_seconds: float = 0.0
+    initial_capital: float = 1_000_000
     metrics: Optional[dict] = None
     equity_curve: Optional[dict] = None   # { dates: [...], values: [...], drawdown: [...] }
     error: Optional[str] = None

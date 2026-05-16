@@ -581,10 +581,11 @@ function updateDashboard(data) {
     }
   }
 
-  // 缓存成交数据（按日期排序，确保早→晚）
+  // 缓存成交数据 + 初始资金
   if (data.recent_trades) {
     st.trades = [...data.recent_trades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
   }
+  if (data.initial_capital) st.initial_capital = data.initial_capital;
   if (data.metrics) st.metrics = data.metrics;
 
   // 状态卡片
@@ -642,12 +643,18 @@ function updateDashboard(data) {
     (allSymbols || []).forEach(s => { nameMap[s.symbol] = s.name || ''; });
     // 按日期排序（早→晚）
     const sortedTrades = [...allTrades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
+    // 计算持有现金（从初始资金累加每笔交易的净现金流）
+    let runningCash = _cur()?.initial_capital || (data.initial_capital || _cur()?.metrics?.initial_value || 1000000);
     tradeBody.innerHTML = sortedTrades.map(t => {
       const sideColor = t.side === 'BUY' ? 'text-green-400' : 'text-red-400';
       const sideText = t.side === 'BUY' ? '买入' : '卖出';
       const net = t.side === 'BUY'
         ? -(t.amount + (t.commission || 0))
         : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
+      // net_amount from DB is always positive (cost for buy, proceeds for sell)
+      const dbNet = t.net_amount || 0;
+      if (t.side === 'BUY') runningCash -= dbNet;
+      else runningCash += dbNet;
       const sName = nameMap[t.symbol] || '';
       return `<tr class="hover:bg-gray-800/50">
         <td class="px-3 py-2 text-left text-gray-400">${t.trade_date}</td>
@@ -659,12 +666,13 @@ function updateDashboard(data) {
         <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.commission)}</td>
         <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.stamp_tax)}</td>
         <td class="px-3 py-2 text-right ${net >= 0 ? 'text-red-400' : 'text-green-400'}">${Fmt.money(net)}</td>
+        <td class="px-3 py-2 text-right text-blue-400 font-medium">${Fmt.money(runningCash)}</td>
       </tr>`;
     }).join('');
   } else {
     tradeCount.textContent = '';
     exportBtn.classList.add('hidden');
-    tradeBody.innerHTML = '<tr><td colspan="9" class="px-3 py-4 text-center text-gray-600">暂无成交</td></tr>';
+    tradeBody.innerHTML = '<tr><td colspan="10" class="px-3 py-4 text-center text-gray-600">暂无成交</td></tr>';
   }
 }
 
