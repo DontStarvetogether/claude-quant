@@ -25,6 +25,7 @@ BUILTIN_STRATEGIES: dict[str, str] = {
     "rsi":       "cq.strategy.examples.rsi.RsiStrategy",
     "bollinger": "cq.strategy.examples.bollinger.BollingerStrategy",
     "momentum":  "cq.strategy.examples.momentum.MomentumStrategy",
+    "trend_rank": "cq.strategy.examples.trend_rank.TrendRankStrategy",
 }
 
 # 策略元数据（名称、描述、参数定义）
@@ -66,6 +67,21 @@ STRATEGY_METADATA: dict[str, dict] = {
             {"name": "position_pct",    "type": "float", "default": 0.9,  "label": "仓位比例",   "min": 0.1, "max": 1.0, "step": 0.1},
         ],
     },
+    "trend_rank": {
+        "name": "趋势排名选股",
+        "description": "按趋势强度和成交额过滤股票池，买入排名靠前标的",
+        "params": [
+            {"name": "momentum_lookback",  "type": "int",   "default": 60,         "label": "动量周期",   "min": 20,       "max": 120,       "step": 5},
+            {"name": "fast_ma",            "type": "int",   "default": 20,         "label": "快均线",     "min": 5,        "max": 60,        "step": 1},
+            {"name": "slow_ma",            "type": "int",   "default": 60,         "label": "慢均线",     "min": 20,       "max": 200,       "step": 5},
+            {"name": "min_avg_amount",     "type": "float", "default": 50000000,   "label": "最低均成交额", "min": 10000000, "max": 500000000, "step": 10000000},
+            {"name": "min_momentum",       "type": "float", "default": 0.0,        "label": "最低涨幅",   "min": -0.2,     "max": 0.5,       "step": 0.01},
+            {"name": "top_n",              "type": "int",   "default": 30,         "label": "排名前N",    "min": 5,        "max": 100,       "step": 5},
+            {"name": "max_holdings",       "type": "int",   "default": 5,          "label": "最多持仓数", "min": 1,        "max": 20,        "step": 1},
+            {"name": "position_pct",       "type": "float", "default": 0.2,        "label": "单股仓位",   "min": 0.05,     "max": 0.5,       "step": 0.05},
+            {"name": "trailing_stop",      "type": "float", "default": 0.10,       "label": "移动止损",   "min": 0.03,     "max": 0.3,       "step": 0.01},
+        ],
+    },
 }
 
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -87,10 +103,7 @@ def load_strategy(strategy_id: str, params: dict[str, Any]):
     module = importlib.import_module(module_path)
     cls = getattr(module, class_name)
     strategy = cls()
-
-    for k, v in params.items():
-        if hasattr(strategy, k):
-            setattr(strategy, k, v)
+    strategy._configured_params = dict(params)
 
     return strategy
 
@@ -210,10 +223,6 @@ def _run_backtest(
         _ensure_data(config, symbols, start_date, end_date, record, start_time)
 
         strategy = load_strategy(strategy_id, strategy_params)
-
-        for k, v in strategy_params.items():
-            if hasattr(strategy, k):
-                setattr(strategy, k, v)
 
         engine = BacktestEngine(config, progress_callback=on_progress)
         engine.add_strategy(strategy, symbols=symbols)

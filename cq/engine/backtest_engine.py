@@ -150,6 +150,7 @@ class BacktestEngine:
         # 初始化策略
         self._strategy._setup(bus, ctx)
         self._strategy.on_init()
+        self._strategy._apply_configured_params()
 
         # 主循环
         equity_curve: dict[date, float] = {}
@@ -196,6 +197,7 @@ class BacktestEngine:
 
             # 步骤 6：日末回调
             self._strategy.after_trading(trade_date)
+            bus.dispatch_all()  # 处理 after_trading 中产生的 SignalEvent → OrderEvent
 
             # 步骤 7：记录权益快照
             equity_curve[trade_date] = portfolio.get_total_assets()

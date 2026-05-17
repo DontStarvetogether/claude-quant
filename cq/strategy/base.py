@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import pandas as pd
 
@@ -91,11 +91,17 @@ class Strategy(ABC):
     def __init__(self) -> None:
         self._bus: Optional["EventBus"] = None
         self.ctx: Optional[StrategyContext] = None
+        self._configured_params: dict[str, Any] = {}
 
     def _setup(self, bus: "EventBus", ctx: StrategyContext) -> None:
         """引擎调用，设置事件总线和上下文。"""
         self._bus = bus
         self.ctx = ctx
+
+    def _apply_configured_params(self) -> None:
+        """引擎在 on_init() 后调用，应用 Web/API 传入的参数。"""
+        for key, value in self._configured_params.items():
+            setattr(self, key, value)
 
     # ── 生命周期 ───────────────────────────────────────────────────────────────
 

@@ -192,6 +192,7 @@ class LiveEngine:
         executor.connect()
         self._strategy._setup(bus, ctx)
         self._strategy.on_init()
+        self._strategy._apply_configured_params()
 
         bar_queue: queue.Queue[Bar] = queue.Queue()
         feed.set_bar_callback(bar_queue.put)
@@ -222,6 +223,7 @@ class LiveEngine:
 
                 if t >= _TIME_CLOSE and not after_done:
                     self._strategy.after_trading(trade_date)
+                    bus.dispatch_all()
                     bus.put(EndOfDayEvent(trade_date=trade_date))
                     bus.dispatch_all()
                     after_done = True
@@ -260,6 +262,7 @@ class LiveEngine:
         bus.subscribe(OrderEvent, matching.on_order)
         self._strategy._setup(bus, ctx)
         self._strategy.on_init()
+        self._strategy._apply_configured_params()
 
         feed = ctx._feed  # HistoricalFeed，覆盖 history_start → end_date
         for trade_date, bars in feed.iter_by_date():
@@ -292,6 +295,7 @@ class LiveEngine:
 
             # 步骤 6：日末回调
             self._strategy.after_trading(trade_date)
+            bus.dispatch_all()
 
             logger.debug(
                 f"[{trade_date}] 纸上交易日结束  总资产 {portfolio.get_total_assets():,.0f}"
@@ -370,4 +374,3 @@ class LiveEngine:
                 bus.put(BarEvent(bar=bar))
         except queue.Empty:
             pass
-
