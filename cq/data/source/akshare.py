@@ -88,8 +88,9 @@ class AkshareSource(DataSource):
         except Exception as e_sina:
             logger.debug(f"{symbol} 新浪源失败: {e_sina}，尝试东方财富源")
 
-        # 回退到东方财富源（stock_zh_a_hist）
+        # 回退到东方财富源
         code = self._to_ak_code(symbol)
+        # 尝试 stock_zh_a_hist（个股），失败则尝试 index_zh_a_hist（指数）
         try:
             df = ak.stock_zh_a_hist(
                 symbol=code,
@@ -98,17 +99,23 @@ class AkshareSource(DataSource):
                 end_date=end_date.strftime("%Y%m%d"),
                 adjust="",
             )
-        except Exception as e:
-            raise ValueError(f"akshare 获取 {symbol} 日线失败: {e}") from e
-        finally:
-            time.sleep(0.1)
-
-        if df is None or df.empty:
-            return pd.DataFrame()
-
-        suspended_dates = self.fetch_suspended_dates(symbol, start_date, end_date)
-        is_st = self._is_st_stock(symbol)
-        return self._normalize_bars(df, suspended_dates=suspended_dates, is_st=is_st)
+            if df is not None and not df.empty:
+                return self._normalize_bars(df)
+        except Exception:
+            pass
+        # 指数数据（如 000300.SH 沪深300）
+        try:
+            df = ak.index_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            if df is not None and not df.empty:
+                return self._normalize_bars(df)
+        except Exception:
+            pass
+        raise ValueError(f"akshare 获取 {symbol} 日线失败（个股和指数均无数据）")
 
     def _fetch_daily_bars_sina(
         self,
