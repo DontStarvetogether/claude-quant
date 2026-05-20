@@ -63,7 +63,7 @@ function renderPage(data) {
 
   renderMetricCards(data.metrics);
   renderStrategyAssessment(data);
-  renderEquityChart(data.equity_curve, data.metrics, data.trades);
+  renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark);
   renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics);
   renderTradesTable(data.trades);
@@ -103,6 +103,18 @@ function renderMetricCards(m) {
   if (m.total_commission !== undefined && m.total_stamp_tax !== undefined) {
     const feesBreakdown = `佣金 ${Fmt.money(m.total_commission)} + 印花税 ${Fmt.money(m.total_stamp_tax)}`;
     set('m-fees-breakdown', feesBreakdown);
+  }
+
+  // 基准对比
+  const hasBenchmark = data.benchmark != null && data.benchmark_curve != null;
+  const benchCards = document.querySelectorAll('.benchmark-only');
+  benchCards.forEach(c => c.classList.toggle('hidden', !hasBenchmark));
+  if (hasBenchmark) {
+    const bmName = data.benchmark === '000300.SH' ? '沪深300' : data.benchmark === '000001.SH' ? '上证综指' : data.benchmark;
+    set('m-excess-return', Fmt.pct(m.excess_return), m.excess_return >= 0 ? 'positive' : 'negative');
+    set('m-benchmark-info', `基准 ${bmName}: ${Fmt.pct(m.benchmark_return)}`);
+    set('m-alpha', Fmt.num(m.alpha, 4), m.alpha >= 0 ? 'positive' : 'negative');
+    set('m-beta', Fmt.num(m.beta, 4));
   }
 }
 
@@ -244,7 +256,7 @@ function clamp(v, min, max) {
 }
 
 // ── 权益曲线图 ─────────────────────────────────────────────────────────────────
-function renderEquityChart(curve, metrics, trades = []) {
+function renderEquityChart(curve, metrics, trades = [], benchCurve = null, benchCode = null) {
   const chart = echarts.init(document.getElementById('equity-chart'), null, { renderer: 'canvas' });
 
   const ddStart = metrics.max_drawdown_start;
@@ -320,6 +332,17 @@ function renderEquityChart(curve, metrics, trades = []) {
         lineStyle: { color: '#ef4444', width: 1 },
         areaStyle: { color: 'rgba(239,68,68,0.15)' },
       },
+      // 基准线（如果有）
+      ...(benchCurve && benchCurve.values && benchCurve.values.length > 0 ? [{
+        name: benchCode === '000300.SH' ? '沪深300' : benchCode === '000001.SH' ? '上证综指' : '基准',
+        type: 'line',
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        data: benchCurve.values,
+        smooth: false,
+        symbol: 'none',
+        lineStyle: { color: '#fbbf24', width: 1.5, type: 'dashed' },
+      }] : []),
     ],
   };
 

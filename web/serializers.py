@@ -83,6 +83,13 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         initial_value=_safe_float(m.initial_value) or 0.0,
         max_drawdown_start=str(m.max_drawdown_start) if m.max_drawdown_start else None,
         max_drawdown_end=str(m.max_drawdown_end) if m.max_drawdown_end else None,
+        excess_return=_safe_float(m.excess_return) or 0.0,
+        alpha=_safe_float(m.alpha) or 0.0,
+        beta=_safe_float(m.beta) or 0.0,
+        information_ratio=_safe_float(m.information_ratio) or 0.0,
+        tracking_error=_safe_float(m.tracking_error) or 0.0,
+        benchmark_return=_safe_float(m.benchmark_return) or 0.0,
+        benchmark_annual_return=_safe_float(m.benchmark_annual_return) or 0.0,
     )
 
     equity_curve = _serialize_equity_curve(result.equity_curve)
@@ -113,6 +120,11 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
             )
         )
 
+    # 基准曲线
+    benchmark_curve = None
+    if result.benchmark_curve is not None:
+        benchmark_curve = _serialize_equity_curve(result.benchmark_curve)
+
     return BacktestResultResponse(
         run_id=record.run_id,
         strategy_name=result.strategy_name,
@@ -120,8 +132,10 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         start_date=str(result.start_date),
         end_date=str(result.end_date),
         initial_capital=result.initial_capital,
+        benchmark=result.benchmark if hasattr(result, 'benchmark') else None,
         metrics=metrics,
         equity_curve=equity_curve,
+        benchmark_curve=benchmark_curve,
         trades=trades,
         rejected_count=len(result.rejected_orders),
         created_at=record.created_at.isoformat(),

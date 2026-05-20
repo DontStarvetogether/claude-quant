@@ -681,6 +681,7 @@ function setupForm() {
       },
       slippage: parseFloat(document.getElementById('slippage').value) / 10000,
       adjust: document.getElementById('adjust-mode').value,
+      benchmark: document.getElementById('benchmark-select')?.value || null,
     };
 
     try {

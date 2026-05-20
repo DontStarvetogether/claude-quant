@@ -51,6 +51,7 @@ class BacktestRequest(BaseModel):
     risk: RiskParams = Field(default_factory=RiskParams)
     slippage: float = Field(default=0.0, ge=0.0, le=0.01)
     adjust: str = Field(default="dynamic", pattern="^(qfq|dynamic)$")
+    benchmark: Optional[str] = None   # 基准指数代码，如 "000300.SH"
 
 
 class BacktestSubmitResponse(BaseModel):
@@ -97,6 +98,14 @@ class MetricsDict(BaseModel):
     initial_value: float
     max_drawdown_start: Optional[str] = None
     max_drawdown_end: Optional[str] = None
+    # 基准对比
+    excess_return: float = 0.0
+    alpha: float = 0.0
+    beta: float = 0.0
+    information_ratio: float = 0.0
+    tracking_error: float = 0.0
+    benchmark_return: float = 0.0
+    benchmark_annual_return: float = 0.0
 
 
 class EquityCurveData(BaseModel):
@@ -126,8 +135,10 @@ class BacktestResultResponse(BaseModel):
     start_date: str
     end_date: str
     initial_capital: float
+    benchmark: Optional[str] = None
     metrics: MetricsDict
     equity_curve: EquityCurveData
+    benchmark_curve: Optional[EquityCurveData] = None
     trades: list[TradeRecord]
     rejected_count: int
     created_at: str

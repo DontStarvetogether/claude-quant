@@ -179,6 +179,19 @@
           <p class="text-xs text-gray-500 mt-1">动态复权：当天为真实价格，历史价格随交易日动态调整</p>
         </div>
 
+        <!-- 基准指数 -->
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">基准指数</label>
+          <select id="benchmark-select"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="">无（不对比）</option>
+            <option value="000300.SH">沪深300 (000300.SH)</option>
+            <option value="000001.SH">上证综指 (000001.SH)</option>
+            <option value="399006.SZ">创业板指 (399006.SZ)</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">选择基准指数后回测结果会叠加Alpha/Beta/超额收益</p>
+        </div>
+
         <!-- 风控参数（折叠）-->
         <details class="border border-gray-800 rounded-lg overflow-hidden">
           <summary class="px-4 py-3 text-sm text-gray-400 cursor-pointer hover:text-gray-200 transition-colors select-none">
@@ -268,6 +281,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/main.js?v=5"></script>
+  <script src="/static/js/main.js?v=6"></script>
 </body>
 </html>

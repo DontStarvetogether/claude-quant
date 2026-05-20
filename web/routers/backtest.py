@@ -46,6 +46,7 @@ async def run_backtest(req: BacktestRequest) -> BacktestSubmitResponse:
         risk_params=req.risk.model_dump(),
         slippage=req.slippage,
         adjust=req.adjust,
+        benchmark=req.benchmark,
     )
 
     return BacktestSubmitResponse(run_id=record.run_id, status="pending")

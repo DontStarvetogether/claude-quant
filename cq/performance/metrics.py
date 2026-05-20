@@ -55,6 +55,14 @@ class MetricsResult:
     # 最大回撤区间
     max_drawdown_start: Optional[date]
     max_drawdown_end: Optional[date]
+    # 基准对比
+    excess_return: float = 0.0
+    alpha: float = 0.0
+    beta: float = 0.0
+    information_ratio: float = 0.0
+    tracking_error: float = 0.0
+    benchmark_return: float = 0.0
+    benchmark_annual_return: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +82,13 @@ class MetricsResult:
             "total_fees": self.total_fees,
             "final_value": self.final_value,
             "initial_value": self.initial_value,
+            "excess_return": self.excess_return,
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "information_ratio": self.information_ratio,
+            "tracking_error": self.tracking_error,
+            "benchmark_return": self.benchmark_return,
+            "benchmark_annual_return": self.benchmark_annual_return,
         }
 
     def summary(self) -> str:
@@ -255,6 +270,67 @@ class PerformanceMetrics:
             "profit_factor": profit_factor,
             "avg_hold_days": avg_hold_days,
         }
+
+    def compute_benchmark(
+        self,
+        result: MetricsResult,
+        strategy_returns: pd.Series,
+        benchmark_returns: pd.Series,
+    ) -> MetricsResult:
+        """
+        计算基准对比指标。
+
+        strategy_returns: 策略日收益率序列（index=trade_date）
+        benchmark_returns: 基准日收益率序列（index=trade_date）
+        """
+        # 对齐日期
+        common = strategy_returns.index.intersection(benchmark_returns.index)
+        if len(common) < 2:
+            return result
+
+        strat = strategy_returns[common]
+        bench = benchmark_returns[common]
+        excess = strat - bench
+
+        rf_daily = self.RF_ANNUAL / self.TRADING_DAYS
+        n = len(common)
+
+        # Beta
+        cov = float(strat.cov(bench))
+        var = float(bench.var())
+        beta = round(cov / var, 4) if var > 1e-10 else 0.0
+
+        # Alpha (Jensen's)
+        bench_ann = float((1 + (bench.iloc[-1] - bench.iloc[0]) / bench.iloc[0]) ** (252 / n) - 1) if bench.iloc[0] > 0 else 0
+        alpha = round(result.annual_return - self.RF_ANNUAL - beta * (bench_ann - self.RF_ANNUAL), 6)
+
+        # 超额收益
+        excess_return = round(result.total_return - (bench.iloc[-1] / bench.iloc[0] - 1), 6)
+
+        # 跟踪误差
+        tracking_error = round(float(excess.std() * (self.TRADING_DAYS ** 0.5)), 6)
+
+        # 信息比率
+        excess_mean = float(excess.mean())
+        information_ratio = round(
+            (excess_mean / excess.std() * (self.TRADING_DAYS ** 0.5))
+            if excess.std() > 1e-10
+            else 0.0,
+            4,
+        )
+
+        # 基准总收益/年化
+        bench_total = float(bench.iloc[-1] / bench.iloc[0] - 1)
+        bench_annual = float((1 + bench_total) ** (252 / n) - 1) if n > 0 else 0.0
+
+        result.excess_return = excess_return
+        result.alpha = alpha
+        result.beta = beta
+        result.information_ratio = information_ratio
+        result.tracking_error = tracking_error
+        result.benchmark_return = round(bench_total, 6)
+        result.benchmark_annual_return = round(bench_annual, 6)
+        return result
 
     @staticmethod
     def _empty_result(initial: float) -> MetricsResult:

@@ -58,6 +58,8 @@ class BacktestResult:
     equity_curve: pd.Series          # index=date, values=净资产
     trades: list[Trade]              # 完整成交记录
     rejected_orders: list[tuple]     # [(order_id, reason), ...]
+    benchmark: Optional[str] = None
+    benchmark_curve: Optional[pd.Series] = None  # index=date, values=基准归一化净值
 
     def summary(self) -> str:
         header = (
@@ -115,6 +117,7 @@ class BacktestEngine:
         self,
         start_date: str | date,
         end_date: str | date,
+        benchmark: str | None = None,
     ) -> BacktestResult:
         """运行回测，返回结果。"""
         if self._strategy is None:
@@ -217,7 +220,30 @@ class BacktestEngine:
 
         # 计算指标
         equity_series = pd.Series(equity_curve)
-        metrics = PerformanceMetrics().compute(equity_series, all_trades)
+        perf = PerformanceMetrics()
+        metrics = perf.compute(equity_series, all_trades)
+
+        # 基准对比
+        benchmark_curve: pd.Series | None = None
+        if benchmark:
+            try:
+                from cq.data.feed.index_feed import IndexFeed
+                index_feed = IndexFeed(store, benchmark, start, end)
+                if not index_feed.returns.empty:
+                    strategy_returns = equity_series.pct_change().dropna()
+                    perf.compute_benchmark(
+                        metrics, strategy_returns, index_feed.returns
+                    )
+                    # 归一化到初始资金
+                    bm_values = index_feed.close / index_feed.close.iloc[0] * self._config.engine.initial_capital
+                    benchmark_curve = bm_values
+                    logger.info(
+                        f"基准 {benchmark} | 收益 {metrics.benchmark_return:+.2%} | "
+                        f"超额 {metrics.excess_return:+.2%} | "
+                        f"Alpha {metrics.alpha:+.4f} | Beta {metrics.beta:.4f}"
+                    )
+            except Exception as e:
+                logger.warning(f"基准对比计算失败: {e}")
 
         logger.info(
             f"回测完成 | 总收益 {metrics.total_return:+.2%} | "
@@ -233,6 +259,8 @@ class BacktestEngine:
             initial_capital=self._config.engine.initial_capital,
             metrics=metrics,
             equity_curve=equity_series,
+            benchmark=benchmark,
+            benchmark_curve=benchmark_curve,
             trades=all_trades,
             rejected_orders=rejected,
         )

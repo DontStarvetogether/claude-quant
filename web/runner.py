@@ -125,6 +125,7 @@ def submit_backtest(
     risk_params: dict[str, Any],
     slippage: float = 0.0,
     adjust: str = "dynamic",
+    benchmark: str | None = None,
     config_path: str = "config/local.yaml",
 ) -> None:
     """提交回测任务到线程池（非阻塞）。"""
@@ -140,6 +141,7 @@ def submit_backtest(
         risk_params,
         slippage,
         adjust,
+        benchmark,
         config_path,
     )
 
@@ -199,6 +201,7 @@ def _run_backtest(
     risk_params: dict[str, Any],
     slippage: float,
     adjust: str,
+    benchmark: str | None,
     config_path: str,
 ) -> None:
     """在线程池中执行回测（同步阻塞）。"""
@@ -232,7 +235,7 @@ def _run_backtest(
 
         engine = BacktestEngine(config, progress_callback=on_progress)
         engine.add_strategy(strategy, symbols=symbols)
-        result = engine.run(start_date, end_date)
+        result = engine.run(start_date, end_date, benchmark=benchmark)
 
         record.result = result
         record.status = "completed"
