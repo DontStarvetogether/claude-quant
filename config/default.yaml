@@ -4,8 +4,8 @@
 
 engine:
   initial_capital: 1_000_000       # 初始资金（元）
-  commission_rate: 0.0003          # 佣金率（万三）
-  stamp_tax_rate: 0.001            # 印花税率（千一，仅卖出）
+  commission_rate: 0.00015         # 佣金率（万1.5，主流券商水平）
+  stamp_tax_rate: 0.0005           # 印花税率（万五，仅卖出，2023.8.28起减半征收）
   min_commission: 5.0              # 最低佣金（元）
   slippage: 0.0                    # 滑点（回测默认 0，实盘可设为 0.0001）
   adjust: "dynamic"                # 复权方式：dynamic=动态复权（推荐）, qfq=静态前复权
