@@ -2,8 +2,9 @@
 RSI 策略（内置示例）。
 
 RSI（相对强弱指数）衡量近期涨跌力度：
-  - RSI < 超卖阈值（默认30）→ 买入（市场可能超卖，等待反弹）
-  - RSI > 超买阈值（默认70）→ 卖出（市场可能过热，等待回调）
+  - RSI < 超卖阈值（默认35）且处于长期趋势上方 → 买入
+  - RSI > 超买阈值（默认65）→ 卖出
+  - 开启趋势过滤时，跌破长期均线防御性卖出
 
 适合：震荡市中单只股票，趋势明显时容易逆势亏损。
 
@@ -27,28 +28,42 @@ class RsiStrategy(Strategy):
 
     def on_init(self) -> None:
         self.period: int = 14       # RSI 计算周期
-        self.oversold: float = 30   # 超卖阈值（低于此值买入）
-        self.overbought: float = 70 # 超买阈值（高于此值卖出）
+        self.oversold: float = 35   # 超卖阈值（低于此值买入）
+        self.overbought: float = 65 # 超买阈值（高于此值卖出）
         self.position_pct: float = 0.9  # 每次买入占总资产比例
+        self.trend_filter_enabled: bool = True
+        self.trend_ma: int = 120
 
     def on_bar(self, bar: Bar) -> None:
         if bar.is_suspended:
             return
 
-        # 需要 period + 1 根 bar 才能计算稳定的 RSI
-        hist = self.ctx.get_bar_history(bar.symbol, n=self.period + 2)
+        hist_len = max(self.period + 2, self.trend_ma if self.trend_filter_enabled else 0)
+        hist = self.ctx.get_bar_history(bar.symbol, n=hist_len)
         if len(hist) < self.period + 1:
             return
 
-        rsi = _calc_rsi(hist["close"], self.period)
+        close = hist["close"]
+        rsi = _calc_rsi(close, self.period)
         if rsi is None:
             return
 
         has_pos = self.ctx.get_position(bar.symbol) is not None
+        trend_ok = True
+        if self.trend_filter_enabled:
+            if len(close) < self.trend_ma:
+                return
+            trend_line = close.rolling(self.trend_ma).mean().iloc[-1]
+            if pd.isna(trend_line):
+                return
+            trend_ok = close.iloc[-1] > trend_line
+            if has_pos and not trend_ok:
+                self.sell(bar.symbol)
+                return
 
         # 超卖买入
         if rsi < self.oversold:
-            if not has_pos and not AStockRules.is_limit_up(bar):
+            if trend_ok and not has_pos and not AStockRules.is_limit_up(bar):
                 self.buy(bar.symbol, percent=self.position_pct)
 
         # 超买卖出

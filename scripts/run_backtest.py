@@ -22,6 +22,10 @@ from cq.utils.config import Config
 
 BUILTIN_STRATEGIES = {
     "double_ma": "cq.strategy.examples.double_ma.DoubleMaStrategy",
+    "rsi": "cq.strategy.examples.rsi.RsiStrategy",
+    "bollinger": "cq.strategy.examples.bollinger.BollingerStrategy",
+    "momentum": "cq.strategy.examples.momentum.MomentumStrategy",
+    "trend_rank": "cq.strategy.examples.trend_rank.TrendRankStrategy",
 }
 
 

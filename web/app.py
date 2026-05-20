@@ -1,4 +1,5 @@
 """FastAPI 应用入口"""
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -44,6 +45,9 @@ _update_service: DataUpdateService = None
 async def startup_event():
     """服务启动时启动数据更新服务"""
     global _update_service
+    if os.getenv("CQ_DISABLE_DATA_UPDATE") == "1":
+        return
+
     try:
         config = Config.from_yaml("config/default.yaml")
         _update_service = DataUpdateService(config)

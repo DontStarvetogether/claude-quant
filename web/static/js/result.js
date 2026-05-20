@@ -62,6 +62,7 @@ function renderPage(data) {
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
   renderMetricCards(data.metrics);
+  renderStrategyAssessment(data);
   renderEquityChart(data.equity_curve, data.metrics, data.trades);
   renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics);
@@ -103,6 +104,143 @@ function renderMetricCards(m) {
     const feesBreakdown = `佣金 ${Fmt.money(m.total_commission)} + 印花税 ${Fmt.money(m.total_stamp_tax)}`;
     set('m-fees-breakdown', feesBreakdown);
   }
+}
+
+// ── 策略体检 ──────────────────────────────────────────────────────────────────
+function renderStrategyAssessment(data) {
+  const panel = document.getElementById('strategy-assessment');
+  if (!panel) return;
+
+  const assessment = assessBacktest(data.metrics, data.symbols || [], data.start_date, data.end_date);
+  const notes = assessment.notes.length ? assessment.notes : ['核心指标未出现明显异常'];
+  const actions = assessment.actions.length ? assessment.actions : ['进入更长周期和更大股票池复验'];
+
+  panel.innerHTML = `
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">策略体检</h2>
+        <div class="flex items-end gap-3">
+          <div class="text-4xl font-bold ${assessment.scoreClass}">${assessment.score}</div>
+          <div class="pb-1">
+            <div class="text-sm font-semibold ${assessment.scoreClass}">${assessment.rating}</div>
+            <div class="text-xs text-gray-500">${assessment.sampleLabel}</div>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 lg:min-w-[560px]">
+        ${assessment.badges.map(b => `
+          <div class="bg-gray-800/70 border border-gray-700 rounded-lg px-3 py-2">
+            <div class="text-[11px] text-gray-500 mb-1">${b.label}</div>
+            <div class="text-sm font-semibold ${b.cls}">${b.value}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+      <div>
+        <div class="text-xs text-gray-500 mb-2">主要判断</div>
+        <div class="space-y-2">${notes.map(n => `<div class="text-sm text-gray-300">${n}</div>`).join('')}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-500 mb-2">下一步</div>
+        <div class="space-y-2">${actions.map(n => `<div class="text-sm text-gray-300">${n}</div>`).join('')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function assessBacktest(m, symbols, startDate, endDate) {
+  const annual = finite(m.annual_return);
+  const sharpe = finite(m.sharpe_ratio);
+  const calmar = finite(m.calmar_ratio);
+  const drawdown = Math.abs(finite(m.max_drawdown));
+  const trades = finite(m.total_trades);
+  const years = sampleYears(startDate, endDate);
+  const symbolCount = symbols.length;
+  const initial = finite(m.initial_value) || 1;
+  const fees = finite(m.total_fees);
+  const feeDrag = fees / initial;
+
+  let score = 50;
+  score += clamp(annual * 220, -25, 25);
+  score += clamp(sharpe * 8, -10, 14);
+  score += clamp(calmar * 12, -12, 18);
+  if (drawdown <= 0.08) score += 10;
+  else if (drawdown <= 0.15) score += 4;
+  else if (drawdown > 0.35) score -= 24;
+  else if (drawdown > 0.25) score -= 15;
+  else if (drawdown > 0.18) score -= 8;
+  if (trades < 8) score -= 12;
+  if (years < 2) score -= 10;
+  if (symbolCount < 20) score -= 6;
+  if (feeDrag > 0.03) score -= 6;
+  score = Math.round(clamp(score, 0, 100));
+
+  const notes = [];
+  const actions = [];
+  if (drawdown > 0.25) {
+    notes.push(`最大回撤 ${Fmt.pct(-drawdown)}，资金曲线承压明显`);
+    actions.push('优先检查仓位上限、趋势过滤和止损规则');
+  } else if (drawdown <= 0.10) {
+    notes.push(`最大回撤控制在 ${Fmt.pct(-drawdown)}，风险暴露较克制`);
+  }
+  if (calmar < 0.3) notes.push(`卡玛比率 ${Fmt.num(calmar, 2)}，单位回撤换来的收益偏弱`);
+  if (sharpe < 0.5) notes.push(`夏普比率 ${Fmt.num(sharpe, 2)}，收益稳定性还不足`);
+  if (trades < 8) {
+    notes.push(`成交 ${trades} 笔，交易样本偏少`);
+    actions.push('扩大股票池或延长区间后再判断参数是否有效');
+  }
+  if (symbolCount < 20) {
+    notes.push(`股票池 ${symbolCount} 只，更像功能验证样本`);
+    actions.push('正式比较建议覆盖 50 只以上并包含不同行业');
+  }
+  if (years < 3) {
+    notes.push(`回测跨度 ${years.toFixed(1)} 年，市场阶段覆盖有限`);
+    actions.push('补充牛市、熊市、震荡市三类区间复验');
+  }
+  if (feeDrag > 0.03) {
+    notes.push(`手续费占初始资金 ${Fmt.pct(feeDrag)}，换手成本需要关注`);
+    actions.push('检查调仓频率和单笔交易门槛');
+  }
+
+  const rating = score >= 75 ? '可进入样本外验证' : score >= 60 ? '有继续优化价值' : score >= 45 ? '仅适合研究观察' : '暂不适合实盘参考';
+  const scoreClass = score >= 75 ? 'text-red-400' : score >= 60 ? 'text-yellow-300' : score >= 45 ? 'text-gray-300' : 'text-green-400';
+  const sampleLabel = `${symbolCount} 只股票 / ${years.toFixed(1)} 年样本`;
+
+  return {
+    score,
+    rating,
+    scoreClass,
+    sampleLabel,
+    notes,
+    actions,
+    badges: [
+      { label: '收益/回撤', value: ratioText(annual, drawdown), cls: calmar >= 0.8 ? 'text-red-400' : calmar >= 0.3 ? 'text-gray-200' : 'text-green-400' },
+      { label: '最大回撤', value: Fmt.pct(-drawdown), cls: drawdown <= 0.15 ? 'text-red-400' : drawdown <= 0.25 ? 'text-yellow-300' : 'text-green-400' },
+      { label: '交易样本', value: `${trades} 笔`, cls: trades >= 30 ? 'text-red-400' : trades >= 8 ? 'text-gray-200' : 'text-yellow-300' },
+      { label: '费用拖累', value: Fmt.pct(feeDrag), cls: feeDrag <= 0.015 ? 'text-gray-200' : 'text-yellow-300' },
+    ],
+  };
+}
+
+function ratioText(annual, drawdown) {
+  if (!drawdown) return '—';
+  return `${Fmt.pct(annual)} / ${Fmt.pct(-drawdown)}`;
+}
+
+function sampleYears(startDate, endDate) {
+  const start = Date.parse(startDate);
+  const end = Date.parse(endDate);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return (end - start) / 86400000 / 365.25;
+}
+
+function finite(v) {
+  return Number.isFinite(Number(v)) ? Number(v) : 0;
+}
+
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
 }
 
 // ── 权益曲线图 ─────────────────────────────────────────────────────────────────

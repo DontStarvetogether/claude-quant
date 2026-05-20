@@ -172,9 +172,15 @@ function renderStrategyParams() {
   container.innerHTML = s.params.map(p => `
     <div>
       <label class="block text-xs text-gray-500 mb-1">${p.label}</label>
-      <input type="number" data-param="${p.name}"
-        value="${p.default}" min="${p.min ?? ''}" max="${p.max ?? ''}" step="${p.step ?? 'any'}"
-        class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+      ${p.type === 'bool' ? `
+        <input type="checkbox" data-param="${p.name}" data-type="${p.type}"
+          ${p.default ? 'checked' : ''}
+          class="accent-blue-500" />
+      ` : `
+        <input type="number" data-param="${p.name}" data-type="${p.type}"
+          value="${p.default}" min="${p.min ?? ''}" max="${p.max ?? ''}" step="${p.step ?? 'any'}"
+          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+      `}
     </div>
   `).join('');
 }
@@ -182,6 +188,10 @@ function renderStrategyParams() {
 function getStrategyParams() {
   const params = {};
   document.querySelectorAll('#params-container input[data-param]').forEach(el => {
+    if (el.dataset.type === 'bool') {
+      params[el.dataset.param] = el.checked;
+      return;
+    }
     const v = parseFloat(el.value);
     if (!isNaN(v)) params[el.dataset.param] = v;
   });

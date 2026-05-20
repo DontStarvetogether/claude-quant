@@ -3,8 +3,8 @@
 
 核心思路：
   - 每日对股票池做流动性、趋势结构、动量过滤
-  - 按近 N 日涨幅排序，买入排名靠前的股票
-  - 最多持有 max_holdings 只，跌破退出均线/移动止损/跌出排名时卖出
+  - 按近 N 日涨幅 / 近期波动率排序，买入风险调整后排名靠前的股票
+  - 最多持有 max_holdings 只，跌破退出均线/移动止损/跌出退出排名时卖出
 
 这是一个组合级策略，决策发生在 after_trading()：
 当天收盘后完成排名并提交信号，次日开盘撮合，仍然没有前视偏差。
@@ -39,13 +39,15 @@ class TrendRankStrategy(Strategy):
         self.slow_ma: int = 60
         self.liquidity_lookback: int = 20
         self.min_avg_amount: float = 50_000_000
-        self.min_momentum: float = 0.0
+        self.min_momentum: float = 0.03
         self.top_n: int = 30
+        self.rank_exit_n: int = 60
         self.max_holdings: int = 5
         self.position_pct: float = 0.2
         self.exit_ma: int = 20
-        self.trailing_stop: float = 0.10
+        self.trailing_stop: float = 0.08
         self.rank_exit: bool = True
+        self.volatility_lookback: int = 20
 
         self._seen_symbols: set[str] = set()
         self._today_candidates: list[_Candidate] = []
@@ -74,6 +76,7 @@ class TrendRankStrategy(Strategy):
             self.slow_ma,
             self.exit_ma,
             self.liquidity_lookback,
+            self.volatility_lookback + 1,
         )
         hist = self.ctx.get_bar_history(bar.symbol, n=hist_len)
         if len(hist) < hist_len:
@@ -105,10 +108,13 @@ class TrendRankStrategy(Strategy):
         avg_amount = float(amount.tail(self.liquidity_lookback).mean())
         price_then = float(close.iloc[-(self.momentum_lookback + 1)])
         momentum = (current_close - price_then) / price_then if price_then > 0 else 0.0
+        volatility = close.pct_change().tail(self.volatility_lookback).std(ddof=1)
 
         if (
             pd.isna(fast)
             or pd.isna(slow)
+            or pd.isna(volatility)
+            or volatility <= 0
             or avg_amount < self.min_avg_amount
             or momentum < self.min_momentum
             or not (current_close > fast > slow)
@@ -121,7 +127,7 @@ class TrendRankStrategy(Strategy):
             self._today_candidates.append(
                 _Candidate(
                     symbol=bar.symbol,
-                    score=momentum,
+                    score=momentum / float(volatility),
                     momentum=momentum,
                     avg_amount=avg_amount,
                 )
@@ -130,6 +136,8 @@ class TrendRankStrategy(Strategy):
     def after_trading(self, trade_date: date) -> None:
         ranked = sorted(self._today_candidates, key=lambda c: c.score, reverse=True)
         top_symbols = {c.symbol for c in ranked[: self.top_n]}
+        exit_rank_n = max(self.rank_exit_n, self.top_n)
+        exit_symbols = {c.symbol for c in ranked[:exit_rank_n]}
 
         held_symbols = {
             symbol
@@ -139,7 +147,7 @@ class TrendRankStrategy(Strategy):
 
         if self.rank_exit:
             for symbol in held_symbols:
-                if symbol not in top_symbols:
+                if symbol not in exit_symbols:
                     self._today_exits.add(symbol)
 
         for symbol in sorted(self._today_exits):

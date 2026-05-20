@@ -21,6 +21,65 @@ const DISPLAY_CONFIG = {
   quickSearchTerm: ''         // 常用股票搜索词
 };
 
+const SYMBOL_PRESETS = [
+  {
+    id: 'core50',
+    label: '宽基核心50',
+    symbols: [
+      '600519.SH','000858.SZ','600036.SH','601318.SH','600276.SH','000333.SZ','002594.SZ','300750.SZ','601166.SH','600887.SH',
+      '601888.SH','600030.SH','000001.SZ','600309.SH','000651.SZ','300760.SZ','601398.SH','601288.SH','601988.SH','601328.SH',
+      '600000.SH','600900.SH','601012.SH','600031.SH','601899.SH','601668.SH','600016.SH','601601.SH','000002.SZ','600048.SH',
+      '600690.SH','002415.SZ','300015.SZ','600438.SH','600436.SH','000725.SZ','601633.SH','600104.SH','601857.SH','600028.SH',
+      '601088.SH','601766.SH','600019.SH','600585.SH','000063.SZ','002475.SZ','600406.SH','603259.SH','300059.SZ','000776.SZ',
+    ],
+  },
+  {
+    id: 'bluechip',
+    label: '蓝筹稳健',
+    symbols: [
+      '600519.SH','000858.SZ','600036.SH','601318.SH','601166.SH','600276.SH','000333.SZ','600887.SH','600309.SH','601398.SH',
+      '601288.SH','601988.SH','601328.SH','600900.SH','600000.SH','601088.SH','600028.SH','601857.SH','600019.SH','600585.SH',
+      '600104.SH','600690.SH','601601.SH','600048.SH','000002.SZ','601668.SH','601766.SH','600031.SH','601899.SH','600030.SH',
+    ],
+  },
+  {
+    id: 'finance',
+    label: '金融地产',
+    symbols: [
+      '600036.SH','601318.SH','601166.SH','000001.SZ','600000.SH','601398.SH','601288.SH','601988.SH','601328.SH','600016.SH',
+      '601601.SH','601628.SH','601336.SH','600030.SH','600837.SH','000776.SZ','600958.SH','601688.SH','601788.SH','000002.SZ',
+      '600048.SH','001979.SZ','600383.SH','000069.SZ','601155.SH',
+    ],
+  },
+  {
+    id: 'consume_health',
+    label: '消费医药',
+    symbols: [
+      '600519.SH','000858.SZ','600887.SH','601888.SH','000333.SZ','000651.SZ','600690.SH','000568.SZ','000596.SZ','603288.SH',
+      '600809.SH','600298.SH','600872.SH','300498.SZ','600276.SH','300760.SZ','600436.SH','603259.SH','000661.SZ','300015.SZ',
+      '002821.SZ','600085.SH','000538.SZ','600196.SH','300122.SZ',
+    ],
+  },
+  {
+    id: 'growth',
+    label: '科技新能源',
+    symbols: [
+      '300750.SZ','002594.SZ','601012.SH','600438.SH','300014.SZ','002812.SZ','002475.SZ','300274.SZ','002129.SZ','300124.SZ',
+      '600406.SH','000725.SZ','002371.SZ','000063.SZ','002415.SZ','603501.SH','688981.SH','688111.SH','688012.SH','300059.SZ',
+      '300760.SZ','300015.SZ','300122.SZ','002230.SZ','002236.SZ',
+    ],
+  },
+];
+
+const PERIOD_PRESETS = [
+  { id: 'five_years', label: '近5年', start: null, end: null, months: 60 },
+  { id: 'three_years', label: '近3年', start: null, end: null, months: 36 },
+  { id: 'bull_rebound', label: '修复上涨 2020-03~2021-02', start: '2020-03-23', end: '2021-02-18' },
+  { id: 'bear_stress', label: '弱市压力 2021-02~2022-04', start: '2021-02-18', end: '2022-04-26' },
+  { id: 'range_market', label: '震荡分化 2022-04~2023-12', start: '2022-04-27', end: '2023-12-29' },
+  { id: 'long_cycle', label: '完整周期 2020~2024', start: '2020-01-01', end: '2024-12-31' },
+];
+
 // ── 初始化 ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   initDateDefaults();
@@ -28,10 +87,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadQuickSymbols();
   setupSymbolInput();
   setupRiskSliders();
+  renderPresetButtons();
   buildQuickSymbols();
   setupSelectAll();
   setupForm();
   loadHistory();
+  updateSampleCheck();
 });
 
 // ── 加载股票池 ───────────────────────────────────────────────────────────────
@@ -57,6 +118,70 @@ async function loadQuickSymbols() {
   }
 }
 
+// ── 样本预设 ─────────────────────────────────────────────────────────────────
+function renderPresetButtons() {
+  const symbolBox = document.getElementById('symbol-preset-buttons');
+  if (symbolBox) {
+    symbolBox.innerHTML = SYMBOL_PRESETS.map(p => `
+      <button type="button" data-symbol-preset="${p.id}"
+        class="px-2.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">
+        ${p.label}
+      </button>
+    `).join('');
+    symbolBox.querySelectorAll('[data-symbol-preset]').forEach(btn => {
+      btn.addEventListener('click', () => applySymbolPreset(btn.dataset.symbolPreset));
+    });
+  }
+
+  const periodBox = document.getElementById('period-preset-buttons');
+  if (periodBox) {
+    periodBox.innerHTML = PERIOD_PRESETS.map(p => `
+      <button type="button" data-period-preset="${p.id}"
+        class="px-2.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded hover:border-blue-500 hover:text-blue-400 text-gray-400 transition-colors">
+        ${p.label}
+      </button>
+    `).join('');
+    periodBox.querySelectorAll('[data-period-preset]').forEach(btn => {
+      btn.addEventListener('click', () => applyPeriodPreset(btn.dataset.periodPreset));
+    });
+  }
+}
+
+function applySymbolPreset(presetId) {
+  const preset = SYMBOL_PRESETS.find(p => p.id === presetId);
+  if (!preset) return;
+
+  const available = new Set(QUICK_SYMBOLS.map(s => s.symbol));
+  const symbols = preset.symbols.filter(sym => available.size === 0 || available.has(sym));
+  selectedSymbols = new Set(symbols);
+  updateSymbolDisplay();
+  buildQuickSymbols();
+
+  if (!symbols.length) {
+    showError(`当前数据中没有匹配的「${preset.label}」样本`);
+  } else {
+    clearError();
+  }
+}
+
+function applyPeriodPreset(presetId) {
+  const preset = PERIOD_PRESETS.find(p => p.id === presetId);
+  if (!preset) return;
+
+  if (preset.months) {
+    const end = new Date();
+    const start = new Date(end);
+    start.setMonth(start.getMonth() - preset.months);
+    document.getElementById('start-date').value = start.toISOString().slice(0, 10);
+    document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+  } else {
+    document.getElementById('start-date').value = preset.start;
+    document.getElementById('end-date').value = preset.end;
+  }
+
+  updateSampleCheck();
+}
+
 // ── 日期默认值（近 3 年）────────────────────────────────────────────────────
 function initDateDefaults() {
   const today = new Date();
@@ -76,7 +201,11 @@ function initDateDefaults() {
     start.setMonth(start.getMonth() - months);
     document.getElementById('start-date').value = start.toISOString().slice(0, 10);
     document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+    updateSampleCheck();
   });
+
+  document.getElementById('start-date')?.addEventListener('change', updateSampleCheck);
+  document.getElementById('end-date')?.addEventListener('change', updateSampleCheck);
 }
 
 // ── 策略加载 ─────────────────────────────────────────────────────────────────
@@ -139,6 +268,15 @@ function renderStrategyParams(strategyId) {
           value="${p.default}"
           class="w-full accent-blue-500"
         />
+      ` : p.type === 'bool' ? `
+        <input
+          id="param-${p.name}"
+          data-param="${p.name}"
+          data-type="${p.type}"
+          type="checkbox"
+          ${p.default ? 'checked' : ''}
+          class="accent-blue-500"
+        />
       ` : `
         <input id="param-${p.name}" data-param="${p.name}" type="text" value="${p.default}"
           class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:border-blue-500" />
@@ -158,7 +296,7 @@ function getStrategyParams() {
     const name = el.dataset.param;
     const type = el.dataset.type;
     const raw = el.value;
-    params[name] = type === 'int' ? parseInt(raw) : type === 'float' ? parseFloat(raw) : raw;
+    params[name] = type === 'int' ? parseInt(raw) : type === 'float' ? parseFloat(raw) : type === 'bool' ? el.checked : raw;
   });
   return params;
 }
@@ -280,6 +418,7 @@ function removeSymbol(symbol) {
 
 function updateSymbolDisplay() {
   renderSymbolTags();
+  updateSampleCheck();
 }
 
 function renderSymbolTags() {
@@ -343,6 +482,51 @@ function renderSymbolTags() {
       </span>
     `;
   }
+}
+
+// ── 样本检查 ─────────────────────────────────────────────────────────────────
+function updateSampleCheck() {
+  const countEl = document.getElementById('sample-symbol-count');
+  if (!countEl) return;
+
+  const years = sampleYears(
+    document.getElementById('start-date')?.value,
+    document.getElementById('end-date')?.value
+  );
+  const count = selectedSymbols.size;
+  const quality = sampleQuality(count, years);
+
+  countEl.textContent = count;
+  document.getElementById('sample-years').textContent = years ? years.toFixed(1) + ' 年' : '—';
+  document.getElementById('sample-purpose').textContent = quality.purpose;
+  document.getElementById('sample-check-note').textContent = quality.note;
+
+  const badge = document.getElementById('sample-check-badge');
+  badge.textContent = quality.label;
+  badge.className = `text-xs ${quality.cls}`;
+}
+
+function sampleQuality(symbolCount, years) {
+  if (symbolCount === 0) {
+    return { label: '待选择', purpose: '—', note: '添加股票后会自动评估样本质量', cls: 'text-gray-500' };
+  }
+  if (symbolCount < 10 || years < 1) {
+    return { label: '样本偏小', purpose: '功能验证', note: '适合检查策略能否运行，不适合判断策略好坏', cls: 'text-yellow-300' };
+  }
+  if (symbolCount < 30 || years < 3) {
+    return { label: '初步研究', purpose: '参数观察', note: '可以粗看方向，但需要扩大股票池或拉长周期后复验', cls: 'text-gray-300' };
+  }
+  if (symbolCount < 50) {
+    return { label: '可比较', purpose: '横向比较', note: '可用于第一轮策略比较，样本外验证仍然必要', cls: 'text-red-400' };
+  }
+  return { label: '较充分', purpose: '稳健性检查', note: '适合观察收益、回撤、费用和交易样本的综合表现', cls: 'text-red-400' };
+}
+
+function sampleYears(startDate, endDate) {
+  const start = Date.parse(startDate);
+  const end = Date.parse(endDate);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  return (end - start) / 86400000 / 365.25;
 }
 
 // ── 快速选择 ─────────────────────────────────────────────────────────────────

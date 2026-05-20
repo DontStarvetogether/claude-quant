@@ -43,9 +43,11 @@ STRATEGY_METADATA: dict[str, dict] = {
         "description": "RSI 超卖时买入，超买时卖出（均值回归）",
         "params": [
             {"name": "period",       "type": "int",   "default": 14,  "label": "RSI 周期",   "min": 5,  "max": 60,  "step": 1},
-            {"name": "oversold",     "type": "float", "default": 30,  "label": "超卖阈值",   "min": 10, "max": 40,  "step": 1},
-            {"name": "overbought",   "type": "float", "default": 70,  "label": "超买阈值",   "min": 60, "max": 90,  "step": 1},
+            {"name": "oversold",     "type": "float", "default": 35,  "label": "超卖阈值",   "min": 10, "max": 40,  "step": 1},
+            {"name": "overbought",   "type": "float", "default": 65,  "label": "超买阈值",   "min": 60, "max": 90,  "step": 1},
             {"name": "position_pct", "type": "float", "default": 0.9, "label": "仓位比例",   "min": 0.1,"max": 1.0, "step": 0.1},
+            {"name": "trend_filter_enabled", "type": "bool", "default": True, "label": "趋势过滤"},
+            {"name": "trend_ma",     "type": "int",   "default": 120, "label": "趋势均线",   "min": 60, "max": 250, "step": 5},
         ],
     },
     "bollinger": {
@@ -55,6 +57,8 @@ STRATEGY_METADATA: dict[str, dict] = {
             {"name": "period",       "type": "int",   "default": 20,  "label": "均线周期",   "min": 5,  "max": 60,  "step": 1},
             {"name": "std_dev",      "type": "float", "default": 2.0, "label": "标准差倍数", "min": 1.0,"max": 3.0, "step": 0.5},
             {"name": "position_pct", "type": "float", "default": 0.9, "label": "仓位比例",   "min": 0.1,"max": 1.0, "step": 0.1},
+            {"name": "trend_filter_enabled", "type": "bool", "default": True, "label": "趋势过滤"},
+            {"name": "trend_ma",     "type": "int",   "default": 120, "label": "趋势均线",   "min": 60, "max": 250, "step": 5},
         ],
     },
     "momentum": {
@@ -75,11 +79,13 @@ STRATEGY_METADATA: dict[str, dict] = {
             {"name": "fast_ma",            "type": "int",   "default": 20,         "label": "快均线",     "min": 5,        "max": 60,        "step": 1},
             {"name": "slow_ma",            "type": "int",   "default": 60,         "label": "慢均线",     "min": 20,       "max": 200,       "step": 5},
             {"name": "min_avg_amount",     "type": "float", "default": 50000000,   "label": "最低均成交额", "min": 10000000, "max": 500000000, "step": 10000000},
-            {"name": "min_momentum",       "type": "float", "default": 0.0,        "label": "最低涨幅",   "min": -0.2,     "max": 0.5,       "step": 0.01},
+            {"name": "min_momentum",       "type": "float", "default": 0.03,       "label": "最低涨幅",   "min": -0.2,     "max": 0.5,       "step": 0.01},
             {"name": "top_n",              "type": "int",   "default": 30,         "label": "排名前N",    "min": 5,        "max": 100,       "step": 5},
+            {"name": "rank_exit_n",         "type": "int",   "default": 60,         "label": "退出排名N",  "min": 10,       "max": 200,       "step": 5},
             {"name": "max_holdings",       "type": "int",   "default": 5,          "label": "最多持仓数", "min": 1,        "max": 20,        "step": 1},
             {"name": "position_pct",       "type": "float", "default": 0.2,        "label": "单股仓位",   "min": 0.05,     "max": 0.5,       "step": 0.05},
-            {"name": "trailing_stop",      "type": "float", "default": 0.10,       "label": "移动止损",   "min": 0.03,     "max": 0.3,       "step": 0.01},
+            {"name": "trailing_stop",      "type": "float", "default": 0.08,       "label": "移动止损",   "min": 0.03,     "max": 0.3,       "step": 0.01},
+            {"name": "volatility_lookback", "type": "int",  "default": 20,         "label": "波动周期",   "min": 5,        "max": 60,        "step": 1},
         ],
     },
 }
