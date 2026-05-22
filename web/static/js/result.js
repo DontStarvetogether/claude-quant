@@ -430,6 +430,7 @@ function benchmarkName(code) {
 // ── 详细指标 ──────────────────────────────────────────────────────────────────
 function renderDetailMetrics(m, data = {}) {
   const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
+  const execDiag = data.execution_diagnostics || {};
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
     ['年化收益率', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return)],
@@ -450,6 +451,9 @@ function renderDetailMetrics(m, data = {}) {
     ['未实现/未配对盈亏', Fmt.money(m.unrealized_pnl || 0), Fmt.colorClass(m.unrealized_pnl || 0)],
     ['撮合模型', data.execution_model || 'next_open', ''],
     ['引擎版本', data.engine_version || '—', ''],
+    ['容量缩量成交', `${execDiag.capacity_limited_count || 0} 笔`, ''],
+    ['容量拒单', `${execDiag.capacity_rejected_count || 0} 笔`, ''],
+    ['平均成交比例', Fmt.pct(execDiag.avg_fill_ratio ?? 1, 1), ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
 
@@ -481,7 +485,7 @@ function renderTradesTable(trades) {
   const tbody = document.getElementById('trades-tbody');
 
   if (!trades.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="text-center text-gray-600 py-4">无成交记录</td></tr>';
     return;
   }
 
@@ -490,6 +494,9 @@ function renderTradesTable(trades) {
     const rowClass = isBuy ? 'trade-buy' : 'trade-sell';
     const sideColor = isBuy ? 'text-green-400' : 'text-red-400';
     const companyName = STOCK_NAMES[t.symbol] || '';
+    const requestedQty = t.requested_quantity || t.quantity;
+    const fillRatio = t.fill_ratio ?? (requestedQty ? t.quantity / requestedQty : 1);
+    const qtyClass = t.capacity_limited ? 'text-yellow-300' : 'text-gray-400';
     
     return `
       <tr class="${rowClass} hover:bg-gray-800/30 transition-colors">
@@ -501,7 +508,9 @@ function renderTradesTable(trades) {
           ${companyName ? `<div class="text-gray-500 text-xs">${companyName}</div>` : ''}
         </td>
         <td class="text-right text-gray-200">${t.price.toFixed(2)}</td>
-        <td class="text-right text-gray-400">${t.quantity}</td>
+        <td class="text-right text-gray-500">${requestedQty}</td>
+        <td class="text-right ${qtyClass}">${t.quantity}</td>
+        <td class="text-right ${t.capacity_limited ? 'text-yellow-300' : 'text-gray-500'}">${Fmt.pct(fillRatio, 1)}</td>
         <td class="text-right text-gray-300">${t.amount.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.commission.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.stamp_tax.toFixed(2)}</td>
@@ -664,7 +673,7 @@ function _renderMonthlyHeatmap(monthly) {
 
 // ── 导出 CSV ──────────────────────────────────────────────────────────────────
 function exportCsv(trades) {
-  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '数量', '成交额', '佣金', '印花税', '净额', '持有现金'];
+  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '请求数量', '成交数量', '成交比例', '成交额', '佣金', '印花税', '净额', '持有现金'];
   const rows = trades.map(t => [
     t.trade_id,
     t.trade_date,
@@ -672,7 +681,9 @@ function exportCsv(trades) {
     t.symbol,
     STOCK_NAMES[t.symbol] || '',
     t.price,
+    t.requested_quantity || t.quantity,
     t.quantity,
+    t.fill_ratio ?? 1,
     t.amount,
     t.commission,
     t.stamp_tax,

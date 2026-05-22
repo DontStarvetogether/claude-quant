@@ -48,6 +48,8 @@ async def run_backtest(req: BacktestRequest) -> BacktestSubmitResponse:
         risk_params=req.risk.model_dump(),
         slippage=req.slippage,
         adjust=req.adjust,
+        enable_capacity_limit=req.enable_capacity_limit,
+        max_volume_participation=req.max_volume_participation,
         benchmark=req.benchmark,
     )
 

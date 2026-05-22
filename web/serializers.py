@@ -137,6 +137,10 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
                 stamp_tax=round(t.stamp_tax, 2),
                 net_amount=round(t.net_amount, 2),
                 cash_after=round(current_cash, 2),  # 交易后持有现金
+                requested_quantity=getattr(t, "requested_quantity", None) or t.quantity,
+                fill_ratio=round(float(getattr(t, "fill_ratio", 1.0)), 6),
+                capacity_limited=bool(getattr(t, "capacity_limited", False)),
+                capacity_limit_qty=getattr(t, "capacity_limit_qty", None),
             )
         )
 
@@ -171,6 +175,7 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         engine_version=result_state.get("engine_version") or "legacy",
         execution_model=result_state.get("execution_model") or "next_open",
         data_quality=result_state.get("data_quality"),
+        execution_diagnostics=result_state.get("execution_diagnostics"),
         risk_events=result_state.get("risk_events") or [],
         benchmark_diagnostics=(
             BenchmarkDiagnostics(**result.benchmark_diagnostics)

@@ -172,3 +172,14 @@ def test_tail_update_recalculates_qfq_when_adj_factor_changes(tmp_path):
     assert qfq_after["adj_factor"].tolist() == [2.0, 1.0]
     diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
     assert diag.data_quality["status"] == "ok"
+
+
+def test_data_quality_allows_pre_listing_gap(tmp_path):
+    pipeline = make_pipeline(tmp_path, FakeSource(make_bars([date(2024, 1, 2), date(2024, 1, 3)])))
+
+    diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 1))
+
+    assert diag.list_date == "2024-01-02"
+    assert diag.coverage_status == "pre_listing_gap"
+    assert diag.data_quality["status"] == "ok"
+    assert "pre_listing_gap" in diag.data_quality["warnings"]

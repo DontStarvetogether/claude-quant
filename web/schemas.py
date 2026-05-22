@@ -51,6 +51,8 @@ class BacktestRequest(BaseModel):
     risk: RiskParams = Field(default_factory=RiskParams)
     slippage: float = Field(default=0.0, ge=0.0, le=0.01)
     adjust: str = Field(default="dynamic", pattern="^(qfq|dynamic)$")
+    enable_capacity_limit: bool = True
+    max_volume_participation: float = Field(default=0.10, ge=0.0, le=1.0)
     benchmark: Optional[str] = None   # 基准指数代码，如 "000300.SH"
 
 
@@ -141,6 +143,8 @@ class SymbolDataDiagnostic(BaseModel):
     requested_start: Optional[str] = None
     requested_end: Optional[str] = None
     error: Optional[str] = None
+    list_date: Optional[str] = None
+    coverage_status: str = "unknown"
     data_quality: Optional[dict[str, Any]] = None
 
 
@@ -170,6 +174,10 @@ class TradeRecord(BaseModel):
     stamp_tax: float
     net_amount: float
     cash_after: float  # 交易后持有现金
+    requested_quantity: Optional[int] = None
+    fill_ratio: float = 1.0
+    capacity_limited: bool = False
+    capacity_limit_qty: Optional[int] = None
 
 
 class BacktestResultResponse(BaseModel):
@@ -189,6 +197,7 @@ class BacktestResultResponse(BaseModel):
     engine_version: Optional[str] = None
     execution_model: Optional[str] = None
     data_quality: Optional[dict[str, Any]] = None
+    execution_diagnostics: Optional[dict[str, Any]] = None
     risk_events: list[dict[str, Any]] = Field(default_factory=list)
     benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
     data_diagnostics: Optional[DataDiagnostics] = None

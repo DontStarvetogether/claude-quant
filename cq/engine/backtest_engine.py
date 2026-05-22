@@ -41,7 +41,7 @@ from cq.risk.pre_trade import PreTradeRisk
 from cq.strategy.base import Strategy, StrategyContext
 from cq.utils.config import Config
 
-ENGINE_VERSION = "2026.05.correctness-v1"
+ENGINE_VERSION = "2026.05.capacity-v1"
 EXECUTION_MODEL = "next_open"
 
 
@@ -69,6 +69,7 @@ class BacktestResult:
     benchmark_diagnostics: Optional[dict[str, Any]] = None
     data_diagnostics: Optional[dict[str, Any]] = None
     data_quality: Optional[dict[str, Any]] = None
+    execution_diagnostics: Optional[dict[str, Any]] = None
     risk_events: list[dict[str, Any]] = field(default_factory=list)
     engine_version: str = ENGINE_VERSION
     execution_model: str = EXECUTION_MODEL
@@ -307,6 +308,7 @@ class BacktestEngine:
             benchmark_diagnostics=benchmark_diagnostics,
             data_diagnostics=data_diagnostics,
             data_quality=self._data_quality(data_diagnostics),
+            execution_diagnostics=self._execution_diagnostics(all_trades, rejected),
             risk_events=risk.events,
             trades=all_trades,
             rejected_orders=rejected,
@@ -365,6 +367,28 @@ class BacktestEngine:
             "total": total,
             "failed": failed,
             "missing": missing,
+        }
+
+    @staticmethod
+    def _execution_diagnostics(
+        trades: list[Trade],
+        rejected: list[tuple],
+    ) -> dict[str, Any]:
+        """提炼撮合约束诊断，便于前端解释成交缩量/拒绝。"""
+        capacity_limited = [t for t in trades if getattr(t, "capacity_limited", False)]
+        ratios = [
+            float(getattr(t, "fill_ratio", 1.0))
+            for t in trades
+            if getattr(t, "requested_quantity", None)
+        ]
+        capacity_rejected = [
+            reason for _, reason in rejected
+            if "容量" in str(reason)
+        ]
+        return {
+            "capacity_limited_count": len(capacity_limited),
+            "capacity_rejected_count": len(capacity_rejected),
+            "avg_fill_ratio": round(sum(ratios) / len(ratios), 6) if ratios else 1.0,
         }
 
     @staticmethod

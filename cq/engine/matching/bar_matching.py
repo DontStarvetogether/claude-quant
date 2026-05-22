@@ -124,7 +124,20 @@ class BarMatchingEngine:
         if quantity <= 0:
             return
 
-        self._fill(order, fill_price, bar, quantity=quantity)
+        quantity, capacity_limited, capacity_limit_qty = self._resolve_capacity_quantity(
+            order, bar, quantity
+        )
+        if quantity <= 0:
+            return
+
+        self._fill(
+            order,
+            fill_price,
+            bar,
+            quantity=quantity,
+            capacity_limited=capacity_limited,
+            capacity_limit_qty=capacity_limit_qty,
+        )
 
     def _match_sell(self, order: Order, bar: Bar) -> None:
         # T+1 最终检查（PreTradeRisk 已检查，这里是最后防线）
@@ -150,7 +163,19 @@ class BarMatchingEngine:
 
         # 滑点：卖出方向价格下浮
         fill_price = self._apply_slippage(fill_price, OrderSide.SELL, bar)
-        self._fill(order, fill_price, bar)
+        quantity, capacity_limited, capacity_limit_qty = self._resolve_capacity_quantity(
+            order, bar, order.quantity
+        )
+        if quantity <= 0:
+            return
+        self._fill(
+            order,
+            fill_price,
+            bar,
+            quantity=quantity,
+            capacity_limited=capacity_limited,
+            capacity_limit_qty=capacity_limit_qty,
+        )
 
     def _apply_slippage(self, price: float, side: OrderSide, bar: Bar) -> float:
         """对成交价施加滑点，买入上浮、卖出下浮，不超过涨跌停价。"""
@@ -215,12 +240,49 @@ class BarMatchingEngine:
             quantity -= 100
         return quantity
 
+    def _resolve_capacity_quantity(
+        self,
+        order: Order,
+        bar: Bar,
+        quantity: int,
+    ) -> tuple[int, bool, int | None]:
+        """按日成交量参与率限制单笔成交量。"""
+        if not self._config.enable_capacity_limit:
+            return quantity, False, None
+
+        participation = max(0.0, min(1.0, self._config.max_volume_participation))
+        capacity_qty = AStockRules.round_to_lot(int(bar.volume * participation))
+        if capacity_qty <= 0:
+            self._reject(
+                order,
+                f"成交容量不足: 当日成交量{bar.volume}股，参与率{participation:.1%}，无法按整手成交",
+            )
+            return 0, False, capacity_qty
+
+        if quantity <= capacity_qty:
+            return quantity, False, capacity_qty
+
+        if not order.allow_partial_fill:
+            self._reject(
+                order,
+                f"成交容量不足: 请求{quantity}股，容量上限{capacity_qty}股",
+            )
+            return 0, False, capacity_qty
+
+        logger.info(
+            f"容量缩量 {order.symbol}: 请求{quantity}股，"
+            f"容量上限{capacity_qty}股，实际成交{capacity_qty}股"
+        )
+        return capacity_qty, True, capacity_qty
+
     def _fill(
         self,
         order: Order,
         price: float,
         bar: Bar,
         quantity: int | None = None,
+        capacity_limited: bool = False,
+        capacity_limit_qty: int | None = None,
     ) -> None:
         fill_quantity = quantity if quantity is not None else order.quantity
         amount = price * fill_quantity
@@ -246,6 +308,9 @@ class BarMatchingEngine:
             stamp_tax=round(stamp_tax, 2),
             trade_time=datetime.combine(bar.trade_date, time(9, 30)),
             trade_date=bar.trade_date,
+            requested_quantity=order.quantity,
+            capacity_limited=capacity_limited,
+            capacity_limit_qty=capacity_limit_qty,
         )
 
         self._bus.put(FillEvent(trade=trade))

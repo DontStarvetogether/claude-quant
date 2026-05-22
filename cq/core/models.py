@@ -124,6 +124,9 @@ class Trade:
     stamp_tax: float         # 印花税（卖出时）
     trade_time: datetime
     trade_date: date
+    requested_quantity: Optional[int] = None
+    capacity_limited: bool = False
+    capacity_limit_qty: Optional[int] = None
 
     @property
     def net_amount(self) -> float:
@@ -131,6 +134,12 @@ class Trade:
         if self.side == OrderSide.BUY:
             return self.amount + self.commission
         return self.amount - self.commission - self.stamp_tax
+
+    @property
+    def fill_ratio(self) -> float:
+        """实际成交数量 / 请求数量。"""
+        requested = getattr(self, "requested_quantity", None) or self.quantity
+        return self.quantity / requested if requested > 0 else 1.0
 
 
 # ── 持仓 ────────────────────────────────────────────────────────────────────

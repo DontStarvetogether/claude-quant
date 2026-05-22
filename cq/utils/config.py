@@ -26,6 +26,8 @@ class EngineConfig:
     min_commission: float = 5.0
     slippage: float = 0.0
     adjust: str = "dynamic"  # "dynamic"=动态复权（推荐）, "qfq"=静态前复权
+    enable_capacity_limit: bool = True
+    max_volume_participation: float = 0.10
 
 
 @dataclass

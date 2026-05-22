@@ -38,6 +38,8 @@ class SymbolUpdateDiagnostic:
     requested_start: str
     requested_end: str
     error: Optional[str] = None
+    list_date: Optional[str] = None
+    coverage_status: str = "unknown"
     data_quality: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict:
@@ -102,6 +104,7 @@ class DataPipeline:
 
         local_min, local_max = self._store.get_available_dates(symbol, adjust="raw")
         requested_start = start_date or local_min or date(2000, 1, 1)
+        list_date = self._fetch_list_date(symbol)
         total_new = 0
         errors: list[str] = []
         empty_source = False
@@ -111,12 +114,7 @@ class DataPipeline:
             if start_date is not None:
                 start = start_date
             else:
-                try:
-                    info = self._source.fetch_stock_info(symbol)
-                    start = info.get("list_date", date(2000, 1, 1))
-                except Exception as e:
-                    logger.warning(f"{symbol} 获取上市日期失败，使用 2000-01-01: {e}")
-                    start = date(2000, 1, 1)
+                start = list_date or date(2000, 1, 1)
 
             result = self._download_range_diagnostic(symbol, start, end_date, recalc_qfq=force)
             total_new += result["new_records"]
@@ -190,6 +188,9 @@ class DataPipeline:
         if total_new == 0:
             logger.info(f"{symbol} 数据已是最新")
 
+        data_quality = self._inspect_local_data_quality(
+            symbol, requested_start, end_date, list_date=list_date
+        )
         return SymbolUpdateDiagnostic(
             symbol=symbol,
             status=status,
@@ -200,7 +201,9 @@ class DataPipeline:
             requested_start=str(requested_start),
             requested_end=str(end_date),
             error="; ".join(errors) if errors else None,
-            data_quality=self._inspect_local_data_quality(symbol, requested_start, end_date),
+            list_date=str(list_date) if list_date else None,
+            coverage_status=str(data_quality.get("coverage_status", "unknown")),
+            data_quality=data_quality,
         )
 
     def _download_range(
@@ -424,11 +427,24 @@ class DataPipeline:
                 new_qfq[col] = new_raw_df[col].values
         self._store.write_daily_bars(symbol, new_qfq, adjust="qfq", mode="append")
 
+    def _fetch_list_date(self, symbol: str) -> date | None:
+        """获取上市日期，失败时返回 None，避免数据准备因辅助信息中断。"""
+        try:
+            info = self._source.fetch_stock_info(symbol)
+            value = info.get("list_date")
+            if value is None:
+                return None
+            return value if isinstance(value, date) else pd.to_datetime(value).date()
+        except Exception as e:
+            logger.warning(f"{symbol} 获取上市日期失败: {e}")
+            return None
+
     def _inspect_local_data_quality(
         self,
         symbol: str,
         requested_start: date,
         requested_end: date,
+        list_date: date | None = None,
     ) -> dict[str, Any]:
         """给结果页/API 使用的轻量本地数据质量摘要。"""
         raw_df = self._store.read_daily_bars(symbol, adjust="raw")
@@ -439,6 +455,8 @@ class DataPipeline:
             return {
                 "status": "missing",
                 "warnings": ["raw_empty"],
+                "coverage_status": "missing",
+                "list_date": str(list_date) if list_date else None,
                 "qfq_available": False,
                 "factor_available": not self._store.read_adj_factors(symbol).empty,
             }
@@ -446,7 +464,16 @@ class DataPipeline:
         dates = pd.to_datetime(raw_df["trade_date"]).dt.date
         local_first = dates.min()
         local_last = dates.max()
-        if local_first > requested_start or local_last < requested_end:
+        coverage_status = "ok"
+        if local_first > requested_start:
+            if list_date is not None and list_date > requested_start and local_first >= list_date:
+                coverage_status = "pre_listing_gap"
+                warnings.append("pre_listing_gap")
+            else:
+                coverage_status = "start_missing"
+                warnings.append("coverage_incomplete")
+        if local_last < requested_end:
+            coverage_status = "end_missing"
             warnings.append("coverage_incomplete")
         if raw_df["trade_date"].duplicated().any():
             warnings.append("duplicate_trade_date")
@@ -454,10 +481,13 @@ class DataPipeline:
             warnings.append("qfq_missing")
 
         adj_df = self._store.read_adj_factors(symbol)
-        status = "ok" if not warnings else "degraded"
+        hard_warnings = [w for w in warnings if w != "pre_listing_gap"]
+        status = "ok" if not hard_warnings else "degraded"
         return {
             "status": status,
             "warnings": warnings,
+            "coverage_status": coverage_status,
+            "list_date": str(list_date) if list_date else None,
             "qfq_available": not qfq_df.empty,
             "factor_available": not adj_df.empty,
             "local_first_date": str(local_first),

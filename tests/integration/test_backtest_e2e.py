@@ -36,13 +36,14 @@ def make_bar(
     pre_close: float,
     limit_up: float = None,
     limit_down: float = None,
+    volume: int = 10000,
 ) -> Bar:
     limit_up = limit_up or round(pre_close * 1.1, 2)
     limit_down = limit_down or round(pre_close * 0.9, 2)
     return Bar(
         symbol=symbol, trade_date=trade_date,
         open=open_, high=close * 1.02, low=close * 0.98, close=close,
-        volume=10000, amount=close * 10000,
+        volume=volume, amount=close * volume,
         limit_up=limit_up, limit_down=limit_down, pre_close=pre_close,
     )
 
@@ -235,6 +236,95 @@ class TestCashConstraint:
         assert buy_fills[0].net_amount <= 100_000
         assert equity[date(2024, 1, 3)] >= 0
         assert not any("现金不足" in reason for _, reason in rejects)
+
+
+class TestCapacityConstraint:
+    def test_low_volume_percent_buy_is_capacity_limited(self):
+        """低成交量下，percent 买入按参与率上限缩量。"""
+
+        class AllInBuyDay1(Strategy):
+            strategy_id = "test_capacity_buy"
+
+            def on_bar(self, bar: Bar):
+                if self.ctx.get_trade_date() == date(2024, 1, 2):
+                    self.buy(bar.symbol, percent=1.0)
+
+        custom_bars = {
+            **BARS,
+            date(2024, 1, 3): make_bar(
+                "000001.SZ", date(2024, 1, 3),
+                open_=10.5, close=11.0, pre_close=10.0, volume=5000,
+            ),
+        }
+
+        with patch.dict(BARS, custom_bars, clear=True):
+            _, fills, _ = run_mini_backtest(AllInBuyDay1())
+
+        buy_fills = [f for f in fills if f.side == OrderSide.BUY]
+        assert len(buy_fills) == 1
+        assert buy_fills[0].quantity == 500
+        assert buy_fills[0].requested_quantity > buy_fills[0].quantity
+        assert buy_fills[0].capacity_limited is True
+        assert buy_fills[0].capacity_limit_qty == 500
+        assert buy_fills[0].fill_ratio < 1
+
+    def test_zero_capacity_rejects_order(self):
+        """容量不足一手时，应拒绝订单并返回容量原因。"""
+
+        class BuyDay1(Strategy):
+            strategy_id = "test_zero_capacity"
+
+            def on_bar(self, bar: Bar):
+                if self.ctx.get_trade_date() == date(2024, 1, 2):
+                    self.buy(bar.symbol, percent=0.5)
+
+        custom_bars = {
+            **BARS,
+            date(2024, 1, 3): make_bar(
+                "000001.SZ", date(2024, 1, 3),
+                open_=10.5, close=11.0, pre_close=10.0, volume=500,
+            ),
+        }
+
+        with patch.dict(BARS, custom_bars, clear=True):
+            _, fills, rejects = run_mini_backtest(BuyDay1())
+
+        assert not fills
+        assert any("成交容量不足" in reason for _, reason in rejects)
+
+    def test_sell_is_capacity_limited_too(self):
+        """卖出也受容量约束，不能无视流动性一次性卖完。"""
+
+        class BuyThenSell(Strategy):
+            strategy_id = "test_capacity_sell"
+
+            def on_bar(self, bar: Bar):
+                d = self.ctx.get_trade_date()
+                pos = self.ctx.get_position(bar.symbol)
+                if d == date(2024, 1, 2):
+                    self.buy(bar.symbol, percent=0.5)
+                elif d == date(2024, 1, 4) and pos:
+                    self.sell(bar.symbol)
+
+        custom_bars = {
+            **BARS,
+            date(2024, 1, 3): make_bar(
+                "000001.SZ", date(2024, 1, 3),
+                open_=10.5, close=11.0, pre_close=10.0, volume=50000,
+            ),
+            date(2024, 1, 5): make_bar(
+                "000001.SZ", date(2024, 1, 5),
+                open_=12.5, close=13.0, pre_close=12.0, volume=1000,
+            ),
+        }
+
+        with patch.dict(BARS, custom_bars, clear=True):
+            _, fills, _ = run_mini_backtest(BuyThenSell())
+
+        sell_fills = [f for f in fills if f.side == OrderSide.SELL]
+        assert len(sell_fills) == 1
+        assert sell_fills[0].quantity == 100
+        assert sell_fills[0].capacity_limited is True
 
 
 class TestNoLookAheadBias:
