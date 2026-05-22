@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from web.routers import backtest, data, live, strategy, symbols
@@ -98,3 +98,8 @@ async def compare_page():
 @app.get("/live.html", include_in_schema=False)
 async def live_page():
     return FileResponse(STATIC_DIR / "live.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
