@@ -60,6 +60,9 @@ class BacktestResult:
     rejected_orders: list[tuple]     # [(order_id, reason), ...]
     benchmark: Optional[str] = None
     benchmark_curve: Optional[pd.Series] = None  # index=date, values=基准归一化净值
+    benchmark_status: str = "not_requested"
+    benchmark_error: Optional[str] = None
+    alpha_beta_available: bool = False
 
     def summary(self) -> str:
         header = (
@@ -225,24 +228,45 @@ class BacktestEngine:
 
         # 基准对比
         benchmark_curve: pd.Series | None = None
+        benchmark_status = "not_requested"
+        benchmark_error: str | None = None
+        alpha_beta_available = False
         if benchmark:
+            benchmark_status = "unavailable"
             try:
                 from cq.data.feed.index_feed import IndexFeed
                 index_feed = IndexFeed(store, benchmark, start, end)
-                if not index_feed.returns.empty:
-                    strategy_returns = equity_series.pct_change().dropna()
-                    perf.compute_benchmark(
-                        metrics, strategy_returns, index_feed.returns
-                    )
+                strategy_returns = equity_series.pct_change().dropna()
+
+                if index_feed.returns.empty:
+                    benchmark_error = "基准数据为空或样本不足，无法计算日收益率"
+                elif strategy_returns.empty:
+                    benchmark_error = "策略收益序列为空，无法计算基准对比"
+                else:
+                    common = strategy_returns.index.intersection(index_feed.returns.index)
+                    if len(common) < 2:
+                        benchmark_error = (
+                            f"策略与基准可对齐交易日不足（{len(common)} 天），"
+                            "无法计算 Alpha/Beta"
+                        )
+                    else:
+                        benchmark_status = "available"
+                        alpha_beta_available = True
+                        perf.compute_benchmark(
+                            metrics, strategy_returns, index_feed.returns
+                        )
+                        logger.info(
+                            f"基准 {benchmark} | 收益 {metrics.benchmark_return:+.2%} | "
+                            f"超额 {metrics.excess_return:+.2%} | "
+                            f"Alpha {metrics.alpha:+.4f} | Beta {metrics.beta:.4f}"
+                        )
+
+                if not index_feed.close.empty:
                     # 归一化到初始资金
                     bm_values = index_feed.close / index_feed.close.iloc[0] * self._config.engine.initial_capital
                     benchmark_curve = bm_values
-                    logger.info(
-                        f"基准 {benchmark} | 收益 {metrics.benchmark_return:+.2%} | "
-                        f"超额 {metrics.excess_return:+.2%} | "
-                        f"Alpha {metrics.alpha:+.4f} | Beta {metrics.beta:.4f}"
-                    )
             except Exception as e:
+                benchmark_error = str(e)
                 logger.warning(f"基准对比计算失败: {e}")
 
         logger.info(
@@ -261,6 +285,9 @@ class BacktestEngine:
             equity_curve=equity_series,
             benchmark=benchmark,
             benchmark_curve=benchmark_curve,
+            benchmark_status=benchmark_status,
+            benchmark_error=benchmark_error,
+            alpha_beta_available=alpha_beta_available,
             trades=all_trades,
             rejected_orders=rejected,
         )

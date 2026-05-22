@@ -87,7 +87,7 @@ class MetricsDict(BaseModel):
     win_rate: float
     avg_profit: float
     avg_loss: float
-    profit_factor: float
+    profit_factor: Optional[float] = None
     avg_hold_days: float
     total_fees: float
     total_commission: float  # 总佣金
@@ -136,6 +136,12 @@ class BacktestResultResponse(BaseModel):
     end_date: str
     initial_capital: float
     benchmark: Optional[str] = None
+    benchmark_symbol: Optional[str] = None
+    benchmark_name: Optional[str] = None
+    benchmark_status: str = "not_requested"
+    benchmark_error: Optional[str] = None
+    alpha_beta_available: bool = False
+    benchmark_curve_available: bool = False
     metrics: MetricsDict
     equity_curve: EquityCurveData
     benchmark_curve: Optional[EquityCurveData] = None

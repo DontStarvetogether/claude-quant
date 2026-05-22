@@ -34,15 +34,18 @@ class IndexFeed:
             self._dates: list[date] = []
             return
 
+        self._df = self._df.copy()
+        self._df["trade_date"] = pd.to_datetime(self._df["trade_date"])
         self._df = self._df.sort_values("trade_date")
         mask = (self._df["trade_date"] >= pd.Timestamp(start_date)) & (
             self._df["trade_date"] <= pd.Timestamp(end_date)
         )
         self._df = self._df[mask]
-
-        self._close = self._df.set_index("trade_date")["close"]
+        # 转为 date 索引（与 equity_curve 对齐，避免 Timestamp vs date 比较错误）
+        self._df["date_key"] = self._df["trade_date"].dt.date
+        self._close = self._df.set_index("date_key")["close"]
         self._returns = self._close.pct_change().dropna()
-        self._dates = self._df["trade_date"].dt.date.tolist()
+        self._dates = self._df["date_key"].tolist()
 
         logger.info(
             f"加载指数 {index_code}：{len(self._df)} 个交易日，{start_date} → {end_date}"

@@ -115,6 +115,24 @@ class AkshareSource(DataSource):
                 return self._normalize_bars(df)
         except Exception:
             pass
+        # 新浪指数历史行情 fallback（覆盖创业板指等深证指数）
+        try:
+            df = ak.stock_zh_index_daily(symbol=self._to_sina_code(symbol))
+            if df is not None and not df.empty:
+                return self._normalize_sina_index_bars(df, start_date, end_date)
+        except Exception:
+            pass
+        # 中证指数官网数据 fallback（可覆盖沪深300等常用基准；字段同样含 OHLC）
+        try:
+            df = ak.stock_zh_index_hist_csindex(
+                symbol=code,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            if df is not None and not df.empty:
+                return self._normalize_bars(df)
+        except Exception:
+            pass
         raise ValueError(f"akshare 获取 {symbol} 日线失败（个股和指数均无数据）")
 
     def _fetch_daily_bars_sina(
@@ -169,6 +187,34 @@ class AkshareSource(DataSource):
             "limit_up", "limit_down",
         ]
         return df[[c for c in keep_cols if c in df.columns]].reset_index(drop=True)
+
+    @staticmethod
+    def _normalize_sina_index_bars(
+        df: pd.DataFrame,
+        start_date: date,
+        end_date: date,
+    ) -> pd.DataFrame:
+        """标准化新浪指数历史行情数据（stock_zh_index_daily）。"""
+        df = df.copy()
+        df["trade_date"] = pd.to_datetime(df["date"]).dt.date
+        df = df[(df["trade_date"] >= start_date) & (df["trade_date"] <= end_date)].copy()
+        if df.empty:
+            return pd.DataFrame()
+
+        for col in ["open", "high", "low", "close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["volume"] = pd.to_numeric(df.get("volume", 0), errors="coerce").fillna(0).astype(int)
+        df["amount"] = 0.0
+        df = df.sort_values("trade_date").reset_index(drop=True)
+        df["pre_close"] = df["close"].shift(1)
+        df.loc[df.index[0], "pre_close"] = df.loc[df.index[0], "open"]
+        df["is_st"] = False
+        df["is_suspended"] = False
+
+        return df[[
+            "trade_date", "open", "high", "low", "close",
+            "volume", "amount", "pre_close", "is_st", "is_suspended",
+        ]].dropna(subset=["open", "close"]).reset_index(drop=True)
 
     @_require_akshare
     def fetch_adj_factors(
@@ -476,7 +522,9 @@ class AkshareSource(DataSource):
             "收盘": "close",
             "成交量": "volume",   # 单位：手（100股），下方转换
             "成交额": "amount",
+            "成交金额": "amount",
             "涨跌额": "_price_change",
+            "涨跌": "_price_change",
         }
         df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
 

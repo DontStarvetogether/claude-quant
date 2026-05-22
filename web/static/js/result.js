@@ -61,18 +61,18 @@ function renderPage(data) {
     (data.rejected_count ? ` &nbsp;<span class="text-xs text-gray-500">拒单 ${data.rejected_count} 次</span>` : '');
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
-  renderMetricCards(data.metrics);
+  renderMetricCards(data.metrics, data);
   renderStrategyAssessment(data);
-  renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark);
+  renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark_name || data.benchmark);
   renderMonthlyReturns(data.equity_curve);
-  renderDetailMetrics(data.metrics);
+  renderDetailMetrics(data.metrics, data);
   renderTradesTable(data.trades);
 
   document.getElementById('export-csv-btn').addEventListener('click', () => exportCsv(data.trades));
 }
 
 // ── 指标卡片 ──────────────────────────────────────────────────────────────────
-function renderMetricCards(m) {
+function renderMetricCards(m, data) {
   const set = (id, value, colorFn) => {
     const el = document.getElementById(id);
     el.textContent = value;
@@ -106,16 +106,30 @@ function renderMetricCards(m) {
   }
 
   // 基准对比
-  const hasBenchmark = data.benchmark != null && data.benchmark_curve != null;
+  const benchmarkSelected = data?.benchmark != null && data.benchmark !== '';
+  const hasBenchmark = benchmarkSelected && data?.alpha_beta_available === true;
+  const hasBenchmarkCurve = benchmarkSelected && data?.benchmark_curve_available === true;
   const benchCards = document.querySelectorAll('.benchmark-only');
   benchCards.forEach(c => c.classList.toggle('hidden', !hasBenchmark));
+  const missingCard = document.querySelector('.benchmark-missing');
+  missingCard?.classList.toggle('hidden', !benchmarkSelected || hasBenchmark);
   if (hasBenchmark) {
-    const bmName = data.benchmark === '000300.SH' ? '沪深300' : data.benchmark === '000001.SH' ? '上证综指' : data.benchmark;
+    const bmName = data.benchmark_name || benchmarkName(data.benchmark);
     set('m-excess-return', Fmt.pct(m.excess_return), m.excess_return >= 0 ? 'positive' : 'negative');
     set('m-benchmark-info', `基准 ${bmName}: ${Fmt.pct(m.benchmark_return)}`);
     set('m-alpha', Fmt.num(m.alpha, 4), m.alpha >= 0 ? 'positive' : 'negative');
     set('m-beta', Fmt.num(m.beta, 4));
+  } else if (benchmarkSelected) {
+    const bmName = data.benchmark_name || benchmarkName(data.benchmark);
+    const reason = data.benchmark_error || benchmarkStatusText(data.benchmark_status, hasBenchmarkCurve);
+    set('m-benchmark-missing', `${bmName}: ${reason}`);
   }
+}
+
+function benchmarkStatusText(status, hasCurve) {
+  if (status === 'not_requested') return '未选择基准';
+  if (status === 'available') return hasCurve ? '基准曲线可用' : '基准指标可用，曲线缺失';
+  return '未计算 Alpha/Beta';
 }
 
 // ── 策略体检 ──────────────────────────────────────────────────────────────────
@@ -256,7 +270,7 @@ function clamp(v, min, max) {
 }
 
 // ── 权益曲线图 ─────────────────────────────────────────────────────────────────
-function renderEquityChart(curve, metrics, trades = [], benchCurve = null, benchCode = null) {
+function renderEquityChart(curve, metrics, trades = [], benchCurve = null, benchLabel = null) {
   const chart = echarts.init(document.getElementById('equity-chart'), null, { renderer: 'canvas' });
 
   const ddStart = metrics.max_drawdown_start;
@@ -291,9 +305,10 @@ function renderEquityChart(curve, metrics, trades = [], benchCurve = null, bench
         const date = params[0]?.axisValue;
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         params.forEach(p => {
-          const val = p.seriesName === '净资产'
-            ? Fmt.money(p.value)
-            : p.value.toFixed(2) + '%';
+          const rawValue = Array.isArray(p.value) ? p.value[1] : p.value;
+          const val = p.seriesName === '回撤%'
+            ? rawValue.toFixed(2) + '%'
+            : Fmt.money(rawValue);
           html += `<div>${p.marker}${p.seriesName}: <b>${val}</b></div>`;
         });
         return html;
@@ -334,11 +349,13 @@ function renderEquityChart(curve, metrics, trades = [], benchCurve = null, bench
       },
       // 基准线（如果有）
       ...(benchCurve && benchCurve.values && benchCurve.values.length > 0 ? [{
-        name: benchCode === '000300.SH' ? '沪深300' : benchCode === '000001.SH' ? '上证综指' : '基准',
+        name: benchLabel || '基准',
         type: 'line',
         xAxisIndex: 0,
         yAxisIndex: 0,
-        data: benchCurve.values,
+        data: benchCurve.dates
+          ? benchCurve.dates.map((d, i) => [d, benchCurve.values[i]])
+          : benchCurve.values,
         smooth: false,
         symbol: 'none',
         lineStyle: { color: '#fbbf24', width: 1.5, type: 'dashed' },
@@ -350,8 +367,17 @@ function renderEquityChart(curve, metrics, trades = [], benchCurve = null, bench
   window.addEventListener('resize', () => chart.resize());
 }
 
+function benchmarkName(code) {
+  const names = {
+    '000300.SH': '沪深300',
+    '000001.SH': '上证综指',
+    '399006.SZ': '创业板指',
+  };
+  return names[code] || code || '基准';
+}
+
 // ── 详细指标 ──────────────────────────────────────────────────────────────────
-function renderDetailMetrics(m) {
+function renderDetailMetrics(m, data = {}) {
   const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
@@ -369,6 +395,21 @@ function renderDetailMetrics(m) {
     ['平均持仓天数', (m.avg_hold_days || 0).toFixed(1) + ' 天', ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
+
+  if (data.benchmark) {
+    const bmName = data.benchmark_name || benchmarkName(data.benchmark);
+    if (data.alpha_beta_available) {
+      rows.push(
+        ['基准', bmName, ''],
+        ['基准收益', Fmt.pct(m.benchmark_return), Fmt.colorClass(m.benchmark_return)],
+        ['超额收益', Fmt.pct(m.excess_return), Fmt.colorClass(m.excess_return)],
+        ['Alpha', Fmt.num(m.alpha, 4), Fmt.colorClass(m.alpha)],
+        ['Beta', Fmt.num(m.beta, 4), ''],
+      );
+    } else {
+      rows.push(['基准对比', `${bmName}: ${data.benchmark_error || '未计算 Alpha/Beta'}`, 'text-yellow-400']);
+    }
+  }
 
   document.getElementById('detail-metrics').innerHTML = rows.map(([label, value, cls]) => `
     <div class="metric-row">

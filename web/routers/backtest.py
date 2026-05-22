@@ -33,6 +33,8 @@ async def run_backtest(req: BacktestRequest) -> BacktestSubmitResponse:
         start_date=req.start_date,
         end_date=req.end_date,
         initial_capital=req.initial_capital,
+        benchmark=req.benchmark,
+        request=req.model_dump(),
     )
 
     submit_backtest(
@@ -138,7 +140,7 @@ async def get_result(run_id: str) -> BacktestResultResponse:
 
 @router.get("/history/list", response_model=HistoryResponse)
 async def get_history() -> HistoryResponse:
-    """列出本次进程内所有历史运行记录（摘要）。"""
+    """列出历史运行记录（摘要）。"""
     runs = []
     for rec in run_store.all():
         metrics = rec.result.metrics if rec.result else None
@@ -158,6 +160,6 @@ async def get_history() -> HistoryResponse:
 
 @router.delete("/{run_id}", status_code=204)
 async def delete_run(run_id: str) -> None:
-    """从内存中删除运行记录。"""
+    """删除运行记录。"""
     if not run_store.delete(run_id):
         raise HTTPException(status_code=404, detail=f"run_id {run_id} 不存在")

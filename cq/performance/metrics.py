@@ -292,7 +292,6 @@ class PerformanceMetrics:
         bench = benchmark_returns[common]
         excess = strat - bench
 
-        rf_daily = self.RF_ANNUAL / self.TRADING_DAYS
         n = len(common)
 
         # Beta
@@ -300,12 +299,21 @@ class PerformanceMetrics:
         var = float(bench.var())
         beta = round(cov / var, 4) if var > 1e-10 else 0.0
 
+        # 基准和策略在共同日期上的累计收益。
+        # bench 是日收益率，不是价格序列，不能用末值/首值相除。
+        strat_total = float((1 + strat).prod() - 1)
+        bench_total = float((1 + bench).prod() - 1)
+        strat_annual = float((1 + strat_total) ** (self.TRADING_DAYS / n) - 1)
+        bench_annual = float((1 + bench_total) ** (self.TRADING_DAYS / n) - 1)
+
         # Alpha (Jensen's)
-        bench_ann = float((1 + (bench.iloc[-1] - bench.iloc[0]) / bench.iloc[0]) ** (252 / n) - 1) if bench.iloc[0] > 0 else 0
-        alpha = round(result.annual_return - self.RF_ANNUAL - beta * (bench_ann - self.RF_ANNUAL), 6)
+        alpha = round(
+            strat_annual - self.RF_ANNUAL - beta * (bench_annual - self.RF_ANNUAL),
+            6,
+        )
 
         # 超额收益
-        excess_return = round(result.total_return - (bench.iloc[-1] / bench.iloc[0] - 1), 6)
+        excess_return = round(strat_total - bench_total, 6)
 
         # 跟踪误差
         tracking_error = round(float(excess.std() * (self.TRADING_DAYS ** 0.5)), 6)
@@ -318,10 +326,6 @@ class PerformanceMetrics:
             else 0.0,
             4,
         )
-
-        # 基准总收益/年化
-        bench_total = float(bench.iloc[-1] / bench.iloc[0] - 1)
-        bench_annual = float((1 + bench_total) ** (252 / n) - 1) if n > 0 else 0.0
 
         result.excess_return = excess_return
         result.alpha = alpha

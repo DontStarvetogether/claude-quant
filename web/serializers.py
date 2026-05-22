@@ -18,6 +18,13 @@ from web.schemas import (
 from web.store import RunRecord
 
 
+BENCHMARK_NAMES = {
+    "000300.SH": "沪深300",
+    "000001.SH": "上证指数",
+    "399006.SZ": "创业板指",
+}
+
+
 def _safe_float(v: Any) -> Any:
     """处理 inf / nan → None（JSON 不支持这些值）。"""
     if v is None:
@@ -124,6 +131,14 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
     benchmark_curve = None
     if result.benchmark_curve is not None:
         benchmark_curve = _serialize_equity_curve(result.benchmark_curve)
+    benchmark_status = getattr(result, "benchmark_status", None)
+    if benchmark_status is None:
+        if result.benchmark is None:
+            benchmark_status = "not_requested"
+        elif benchmark_curve is not None:
+            benchmark_status = "available"
+        else:
+            benchmark_status = "unavailable"
 
     return BacktestResultResponse(
         run_id=record.run_id,
@@ -133,6 +148,12 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         end_date=str(result.end_date),
         initial_capital=result.initial_capital,
         benchmark=result.benchmark if hasattr(result, 'benchmark') else None,
+        benchmark_symbol=result.benchmark if hasattr(result, 'benchmark') else None,
+        benchmark_name=BENCHMARK_NAMES.get(result.benchmark) if getattr(result, "benchmark", None) else None,
+        benchmark_status=benchmark_status,
+        benchmark_error=getattr(result, "benchmark_error", None),
+        alpha_beta_available=bool(getattr(result, "alpha_beta_available", False)),
+        benchmark_curve_available=benchmark_curve is not None,
         metrics=metrics,
         equity_curve=equity_curve,
         benchmark_curve=benchmark_curve,

@@ -17,27 +17,8 @@ import click
 from loguru import logger
 
 from cq.engine.backtest_engine import BacktestEngine
+from cq.strategy.registry import BUILTIN_STRATEGIES, load_strategy
 from cq.utils.config import Config
-
-
-BUILTIN_STRATEGIES = {
-    "double_ma": "cq.strategy.examples.double_ma.DoubleMaStrategy",
-    "rsi": "cq.strategy.examples.rsi.RsiStrategy",
-    "bollinger": "cq.strategy.examples.bollinger.BollingerStrategy",
-    "momentum": "cq.strategy.examples.momentum.MomentumStrategy",
-    "trend_rank": "cq.strategy.examples.trend_rank.TrendRankStrategy",
-}
-
-
-def _load_strategy(name: str):
-    if name in BUILTIN_STRATEGIES:
-        module_path, class_name = BUILTIN_STRATEGIES[name].rsplit(".", 1)
-        import importlib
-        module = importlib.import_module(module_path)
-        return getattr(module, class_name)()
-    raise ValueError(
-        f"未知策略: {name}。内置策略: {list(BUILTIN_STRATEGIES.keys())}"
-    )
 
 
 @click.command()
@@ -64,7 +45,11 @@ def main(
     logger.remove()
     logger.add(sys.stderr, level=config.logging.level)
 
-    strat = _load_strategy(strategy)
+    if strategy not in BUILTIN_STRATEGIES:
+        raise ValueError(
+            f"未知策略: {strategy}。内置策略: {list(BUILTIN_STRATEGIES.keys())}"
+        )
+    strat = load_strategy(strategy)
     engine = BacktestEngine(config)
     engine.add_strategy(strat, symbols=list(symbols))
 

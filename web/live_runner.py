@@ -23,8 +23,9 @@ from cq.core.models import OrderSide, Trade
 from cq.data.store.parquet_store import ParquetStore
 from cq.live.engine import LiveEngine
 from cq.performance.metrics import PerformanceMetrics
+from cq.strategy.registry import load_strategy
 from cq.utils.config import Config
-from web.runner import BUILTIN_STRATEGIES, load_strategy, _ensure_data
+from web.runner import _ensure_data
 from web import db
 
 
