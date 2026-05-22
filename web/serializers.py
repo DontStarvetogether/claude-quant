@@ -15,6 +15,7 @@ from web.schemas import (
     MetricsDict,
     TradeRecord,
     BenchmarkDiagnostics,
+    DataDiagnostics,
 )
 from web.store import RunRecord
 
@@ -158,6 +159,11 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         benchmark_diagnostics=(
             BenchmarkDiagnostics(**result.benchmark_diagnostics)
             if getattr(result, "benchmark_diagnostics", None)
+            else None
+        ),
+        data_diagnostics=(
+            DataDiagnostics(**result.data_diagnostics)
+            if getattr(result, "data_diagnostics", None)
             else None
         ),
         metrics=metrics,

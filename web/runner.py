@@ -22,6 +22,25 @@ from web.store import RunRecord, run_store
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
+def _diagnostic_summary(
+    symbols: list[dict],
+    benchmark: dict | None = None,
+) -> dict:
+    items = symbols + ([benchmark] if benchmark else [])
+    total = len(items)
+    updated = sum(1 for item in items if item.get("status") == "updated")
+    cache_hit = sum(1 for item in items if item.get("status") == "cache_hit")
+    failed = sum(1 for item in items if str(item.get("status", "")).startswith("download_failed"))
+    missing = sum(1 for item in items if item.get("status") in ("download_failed_no_cache", "empty_source"))
+    return {
+        "total": total,
+        "updated": updated,
+        "cache_hit": cache_hit,
+        "failed": failed,
+        "missing": missing,
+    }
+
+
 def submit_backtest(
     run_id: str,
     strategy_id: str,
@@ -62,7 +81,7 @@ def _ensure_data(
     record: RunRecord,
     start_time: float,
     benchmark: str | None = None,
-) -> None:
+) -> dict:
     """通过 DataPipeline 确保回测所需数据已下载到本地缓存。"""
     from cq.data.calendar import TradingCalendar
     from cq.data.pipeline import DataPipeline
@@ -96,6 +115,9 @@ def _ensure_data(
     end = _date.fromisoformat(end_date)
     start = _date.fromisoformat(start_date)
 
+    symbol_diagnostics: list[dict] = []
+    benchmark_diagnostic: dict | None = None
+
     for i, sym in enumerate(symbols):
         elapsed = time.monotonic() - start_time
         record.current_date = f"下载数据 {sym} ({i + 1}/{len(symbols)})..."
@@ -106,9 +128,24 @@ def _ensure_data(
             elapsed_seconds=elapsed,
         )
         try:
-            pipeline.update_symbol(sym, end, start_date=start)
+            diagnostic = pipeline.update_symbol_diagnostic(sym, end, start_date=start).to_dict()
         except Exception as e:
             logger.warning(f"数据下载失败 {sym}: {e}，将使用已有本地数据")
+            local_min, local_max = store.get_available_dates(sym, adjust="raw")
+            diagnostic = {
+                "symbol": sym,
+                "role": "trade_symbol",
+                "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
+                "new_records": 0,
+                "used_cache": local_max is not None,
+                "local_first_date": str(local_min) if local_min else None,
+                "local_last_date": str(local_max) if local_max else None,
+                "requested_start": start_date,
+                "requested_end": end_date,
+                "error": str(e),
+            }
+        diagnostic["role"] = "trade_symbol"
+        symbol_diagnostics.append(diagnostic)
 
     if benchmark:
         elapsed = time.monotonic() - start_time
@@ -120,9 +157,31 @@ def _ensure_data(
             elapsed_seconds=elapsed,
         )
         try:
-            pipeline.update_symbol(benchmark, end, start_date=start)
+            benchmark_diagnostic = pipeline.update_symbol_diagnostic(
+                benchmark, end, start_date=start
+            ).to_dict()
         except Exception as e:
             logger.warning(f"基准数据下载失败 {benchmark}: {e}，将使用已有本地数据")
+            local_min, local_max = store.get_available_dates(benchmark, adjust="raw")
+            benchmark_diagnostic = {
+                "symbol": benchmark,
+                "role": "benchmark",
+                "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
+                "new_records": 0,
+                "used_cache": local_max is not None,
+                "local_first_date": str(local_min) if local_min else None,
+                "local_last_date": str(local_max) if local_max else None,
+                "requested_start": start_date,
+                "requested_end": end_date,
+                "error": str(e),
+            }
+        benchmark_diagnostic["role"] = "benchmark"
+
+    return {
+        "symbols": symbol_diagnostics,
+        "benchmark": benchmark_diagnostic,
+        "summary": _diagnostic_summary(symbol_diagnostics, benchmark_diagnostic),
+    }
 
 
 def _run_backtest(
@@ -177,13 +236,20 @@ def _run_backtest(
         config.risk.max_drawdown_stop = risk_params.get("max_drawdown_stop", 0.15)
 
         # 从 AKShare 下载/增量更新数据
-        _ensure_data(config, symbols, start_date, end_date, record, start_time, benchmark)
+        data_diagnostics = _ensure_data(
+            config, symbols, start_date, end_date, record, start_time, benchmark
+        )
 
         strategy = load_strategy(strategy_id, strategy_params)
 
         engine = BacktestEngine(config, progress_callback=on_progress)
         engine.add_strategy(strategy, symbols=symbols)
-        result = engine.run(start_date, end_date, benchmark=benchmark)
+        result = engine.run(
+            start_date,
+            end_date,
+            benchmark=benchmark,
+            data_diagnostics=data_diagnostics,
+        )
 
         elapsed = time.monotonic() - start_time
         record.result = result

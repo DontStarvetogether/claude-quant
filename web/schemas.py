@@ -126,6 +126,33 @@ class BenchmarkDiagnostics(BaseModel):
     aligned: bool = False
 
 
+class SymbolDataDiagnostic(BaseModel):
+    symbol: str
+    role: str = "trade_symbol"
+    status: str
+    new_records: int = 0
+    used_cache: bool = False
+    local_first_date: Optional[str] = None
+    local_last_date: Optional[str] = None
+    requested_start: Optional[str] = None
+    requested_end: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DataDiagnosticsSummary(BaseModel):
+    total: int = 0
+    updated: int = 0
+    cache_hit: int = 0
+    failed: int = 0
+    missing: int = 0
+
+
+class DataDiagnostics(BaseModel):
+    symbols: list[SymbolDataDiagnostic] = Field(default_factory=list)
+    benchmark: Optional[SymbolDataDiagnostic] = None
+    summary: DataDiagnosticsSummary = Field(default_factory=DataDiagnosticsSummary)
+
+
 class TradeRecord(BaseModel):
     trade_id: str
     symbol: str
@@ -155,6 +182,7 @@ class BacktestResultResponse(BaseModel):
     alpha_beta_available: bool = False
     benchmark_curve_available: bool = False
     benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
+    data_diagnostics: Optional[DataDiagnostics] = None
     metrics: MetricsDict
     equity_curve: EquityCurveData
     benchmark_curve: Optional[EquityCurveData] = None

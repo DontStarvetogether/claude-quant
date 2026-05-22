@@ -129,6 +129,7 @@
             <div id="dl-progress-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
           </div>
           <p id="dl-current" class="text-xs text-gray-500"></p>
+          <div id="dl-result-summary" class="hidden grid grid-cols-2 md:grid-cols-4 gap-2 text-xs"></div>
           <div id="dl-errors" class="hidden">
             <p class="text-xs text-red-400 mt-1">失败股票：</p>
             <ul id="dl-error-list" class="text-xs text-red-400 ml-3 space-y-0.5 max-h-24 overflow-y-auto"></ul>
@@ -465,10 +466,13 @@
       const current = document.getElementById('dl-current');
       const errorsDiv = document.getElementById('dl-errors');
       const errorList = document.getElementById('dl-error-list');
+      const resultSummary = document.getElementById('dl-result-summary');
 
       area.classList.remove('hidden');
       errorsDiv.classList.add('hidden');
       errorList.innerHTML = '';
+      resultSummary.classList.add('hidden');
+      resultSummary.innerHTML = '';
 
       const evtSource = new EventSource(`/api/data/download/${taskId}/progress`);
 
@@ -503,7 +507,11 @@
 
         if (d.errors && d.errors.length > 0) {
           errorsDiv.classList.remove('hidden');
-          errorList.innerHTML = d.errors.map(er => `<li>${er}</li>`).join('');
+          errorList.innerHTML = d.errors.map(er => `<li>${escapeHtml(er)}</li>`).join('');
+        }
+
+        if (d.summary) {
+          renderDownloadSummary(d.summary, d.results || []);
         }
       };
 
@@ -512,6 +520,54 @@
         setDownloadBtns(true);
         text.textContent = '连接中断';
       };
+    }
+
+    function renderDownloadSummary(summary, results) {
+      const box = document.getElementById('dl-result-summary');
+      if (!box) return;
+      box.classList.remove('hidden');
+      box.innerHTML = [
+        ['已更新', summary.updated || 0, 'text-green-300'],
+        ['使用缓存', summary.cache_hit || 0, 'text-gray-300'],
+        ['失败', summary.failed || 0, 'text-yellow-300'],
+        ['缺失', summary.missing || 0, 'text-red-300'],
+      ].map(([label, value, cls]) => `
+        <div class="rounded border border-gray-800 bg-gray-950/40 px-2 py-1">
+          <div class="text-gray-600">${label}</div>
+          <div class="${cls} font-semibold">${value}</div>
+        </div>
+      `).join('');
+
+      const failed = results.filter(r => String(r.status || '').startsWith('download_failed') || r.status === 'empty_source');
+      if (failed.length) {
+        document.getElementById('dl-errors').classList.remove('hidden');
+        document.getElementById('dl-error-list').innerHTML = failed
+          .map(r => {
+            const error = r.error ? ` - ${escapeHtml(String(r.error))}` : '';
+            return `<li>${escapeHtml(String(r.symbol || ''))}: ${escapeHtml(downloadStatusLabel(r.status))}${error}</li>`;
+          })
+          .join('');
+      }
+    }
+
+    function downloadStatusLabel(status) {
+      const labels = {
+        updated: '已更新',
+        cache_hit: '使用缓存',
+        download_failed_cache_available: '下载失败但有缓存',
+        download_failed_no_cache: '下载失败且无缓存',
+        empty_source: '数据源无数据',
+      };
+      return labels[status] || status || '未知';
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
     }
 
     function setDownloadBtns(enabled) {

@@ -64,6 +64,7 @@ class BacktestResult:
     benchmark_error: Optional[str] = None
     alpha_beta_available: bool = False
     benchmark_diagnostics: Optional[dict[str, Any]] = None
+    data_diagnostics: Optional[dict[str, Any]] = None
 
     def summary(self) -> str:
         header = (
@@ -122,6 +123,7 @@ class BacktestEngine:
         start_date: str | date,
         end_date: str | date,
         benchmark: str | None = None,
+        data_diagnostics: dict[str, Any] | None = None,
     ) -> BacktestResult:
         """运行回测，返回结果。"""
         if self._strategy is None:
@@ -295,6 +297,7 @@ class BacktestEngine:
             benchmark_error=benchmark_error,
             alpha_beta_available=alpha_beta_available,
             benchmark_diagnostics=benchmark_diagnostics,
+            data_diagnostics=data_diagnostics,
             trades=all_trades,
             rejected_orders=rejected,
         )

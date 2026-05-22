@@ -11,6 +11,7 @@ DataPipeline：协调 DataSource + PriceAdjuster + ParquetStore。
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from typing import Optional
 
@@ -22,6 +23,24 @@ from cq.data.calendar import TradingCalendar
 from cq.data.source.base import DataSource
 from cq.data.store.parquet_store import ParquetStore
 from cq.utils.trading_rules import AStockRules
+
+
+@dataclass
+class SymbolUpdateDiagnostic:
+    """单个 symbol 的数据准备诊断。"""
+
+    symbol: str
+    status: str
+    new_records: int
+    used_cache: bool
+    local_first_date: Optional[str]
+    local_last_date: Optional[str]
+    requested_start: str
+    requested_end: str
+    error: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 class DataPipeline:
@@ -45,8 +64,23 @@ class DataPipeline:
         start_date: Optional[date] = None,
         force: bool = False,
     ) -> int:
+        """增量更新单只股票数据，返回新增 bar 数量。"""
+        return self.update_symbol_diagnostic(
+            symbol=symbol,
+            end_date=end_date,
+            start_date=start_date,
+            force=force,
+        ).new_records
+
+    def update_symbol_diagnostic(
+        self,
+        symbol: str,
+        end_date: Optional[date] = None,
+        start_date: Optional[date] = None,
+        force: bool = False,
+    ) -> SymbolUpdateDiagnostic:
         """
-        增量更新单只股票数据。
+        增量更新单只股票数据，返回结构化诊断。
 
         逻辑：
           - force=True：从 start_date（或上市日）全量重下
@@ -55,12 +89,21 @@ class DataPipeline:
               * 尾部增量：[local_max+1, end_date]
               * 头部回填：若 start_date < local_min，则补下 [start_date, local_min-1]
 
-        返回：新增的 bar 数量（尾部 + 头部）。
+        status:
+          - updated：新增了数据
+          - cache_hit：本地缓存已覆盖目标区间
+          - download_failed_cache_available：下载失败，但本地有缓存可继续
+          - download_failed_no_cache：下载失败，且本地无可用缓存
+          - empty_source：数据源返回空数据
         """
         if end_date is None:
             end_date = date.today()
 
         local_min, local_max = self._store.get_available_dates(symbol, adjust="raw")
+        requested_start = start_date or local_min or date(2000, 1, 1)
+        total_new = 0
+        errors: list[str] = []
+        empty_source = False
 
         # ── 情况 1：无本地数据 或 强制重下 ─────────────────────────────────────
         if local_max is None or force:
@@ -74,41 +117,89 @@ class DataPipeline:
                     logger.warning(f"{symbol} 获取上市日期失败，使用 2000-01-01: {e}")
                     start = date(2000, 1, 1)
 
-            return self._download_range(symbol, start, end_date, recalc_qfq=force)
-
-        # ── 情况 2：有本地数据 — 尾部增量 + 头部回填 ────────────────────────────
-        total_new = 0
-
-        # 尾部增量：[local_max+1, end_date]
-        try:
-            tail_start = self._calendar.next_trading_day(local_max)
-        except ValueError:
-            tail_start = None
-
-        if tail_start is not None and tail_start <= end_date:
-            # 尾部增量：跳过复权因子下载（短期内几乎不会有除权）
-            total_new += self._download_range(symbol, tail_start, end_date, recalc_qfq=False, skip_adj=True)
+            result = self._download_range_diagnostic(symbol, start, end_date, recalc_qfq=force)
+            total_new += result["new_records"]
+            if result["status"] == "failed":
+                errors.append(result["error"] or "下载失败")
+            elif result["status"] == "empty":
+                empty_source = True
         else:
-            logger.info(f"{symbol} 尾部已是最新（本地: {local_max}, 目标: {end_date}）")
-
-        # 头部回填：若请求的 start_date 早于本地最早日
-        if start_date is not None and start_date < local_min:
+            # ── 情况 2：有本地数据 — 尾部增量 + 头部回填 ────────────────────────
+            # 尾部增量：[local_max+1, end_date]
             try:
-                head_end = self._calendar.prev_trading_day(local_min)
+                tail_start = self._calendar.next_trading_day(local_max)
             except (ValueError, AttributeError):
-                # 若日历无 prev_trading_day 方法，用 local_min 前一天（让 DataSource 自行去重）
-                from datetime import timedelta
-                head_end = local_min - timedelta(days=1)
+                tail_start = None
 
-            if head_end >= start_date:
-                logger.info(f"{symbol} 头部回填 {start_date} → {head_end}（当前本地最早: {local_min}）")
-                # 头部数据会改变复权序列，需要重算 qfq
-                total_new += self._download_range(symbol, start_date, head_end, recalc_qfq=True)
+            if tail_start is not None and tail_start <= end_date:
+                result = self._download_range_diagnostic(
+                    symbol, tail_start, end_date, recalc_qfq=False, skip_adj=True
+                )
+                total_new += result["new_records"]
+                if result["status"] == "failed":
+                    errors.append(result["error"] or "尾部增量下载失败")
+                elif result["status"] == "empty":
+                    empty_source = True
+            else:
+                logger.info(f"{symbol} 尾部已是最新（本地: {local_max}, 目标: {end_date}）")
+
+            # 头部回填：若请求的 start_date 早于本地最早日
+            if start_date is not None and start_date < local_min:
+                try:
+                    head_end = self._calendar.prev_trading_day(local_min)
+                except (ValueError, AttributeError):
+                    # 若日历无 prev_trading_day 方法，用 local_min 前一天（让 DataSource 自行去重）
+                    from datetime import timedelta
+                    head_end = local_min - timedelta(days=1)
+
+                if head_end >= start_date:
+                    logger.info(f"{symbol} 头部回填 {start_date} → {head_end}（当前本地最早: {local_min}）")
+                    result = self._download_range_diagnostic(
+                        symbol, start_date, head_end, recalc_qfq=True
+                    )
+                    total_new += result["new_records"]
+                    if result["status"] == "failed":
+                        errors.append(result["error"] or "头部回填下载失败")
+                    elif result["status"] == "empty":
+                        empty_source = True
+
+        final_min, final_max = self._store.get_available_dates(symbol, adjust="raw")
+        used_cache = final_min is not None and final_max is not None
+        cache_covers_request = (
+            used_cache
+            and final_min <= requested_start
+            and final_max >= end_date
+        )
+
+        if total_new > 0:
+            status = "updated"
+        elif errors and used_cache:
+            status = "download_failed_cache_available"
+        elif errors:
+            status = "download_failed_no_cache"
+        elif empty_source and not used_cache:
+            status = "empty_source"
+        elif cache_covers_request:
+            status = "cache_hit"
+        elif used_cache:
+            status = "download_failed_cache_available" if empty_source else "cache_hit"
+        else:
+            status = "empty_source"
 
         if total_new == 0:
             logger.info(f"{symbol} 数据已是最新")
 
-        return total_new
+        return SymbolUpdateDiagnostic(
+            symbol=symbol,
+            status=status,
+            new_records=total_new,
+            used_cache=used_cache,
+            local_first_date=str(final_min) if final_min else None,
+            local_last_date=str(final_max) if final_max else None,
+            requested_start=str(requested_start),
+            requested_end=str(end_date),
+            error="; ".join(errors) if errors else None,
+        )
 
     def _download_range(
         self,
@@ -126,6 +217,26 @@ class DataPipeline:
         """
         if start > end:
             return 0
+        result = self._download_range_diagnostic(
+            symbol=symbol,
+            start=start,
+            end=end,
+            recalc_qfq=recalc_qfq,
+            skip_adj=skip_adj,
+        )
+        return result["new_records"]
+
+    def _download_range_diagnostic(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        recalc_qfq: bool = False,
+        skip_adj: bool = False,
+    ) -> dict:
+        """下载并存储 [start, end] 区间的数据，返回局部诊断。"""
+        if start > end:
+            return {"status": "skipped", "new_records": 0, "error": None}
 
         logger.info(f"下载 {symbol} {start} → {end}")
 
@@ -133,11 +244,11 @@ class DataPipeline:
             raw_df = self._source.fetch_daily_bars(symbol, start, end)
         except Exception as e:
             logger.error(f"{symbol} 下载失败: {e}")
-            return 0
+            return {"status": "failed", "new_records": 0, "error": str(e)}
 
         if raw_df.empty:
             logger.warning(f"{symbol} 无数据（{start} → {end}）")
-            return 0
+            return {"status": "empty", "new_records": 0, "error": None}
 
         raw_df = self._fill_limit_prices(raw_df, symbol)
         self._store.write_daily_bars(symbol, raw_df, adjust="raw", mode="append")
@@ -161,7 +272,7 @@ class DataPipeline:
 
         new_count = len(raw_df)
         logger.info(f"{symbol} 新增 {new_count} 条记录")
-        return new_count
+        return {"status": "updated", "new_records": new_count, "error": None}
 
     def update_batch(
         self,
@@ -188,6 +299,46 @@ class DataPipeline:
                     results[sym] = 0
 
         total = sum(results.values())
+        logger.info(f"批量更新完成：{len(symbols)} 只股票，共新增 {total} 条记录")
+        return results
+
+    def update_batch_diagnostic(
+        self,
+        symbols: list[str],
+        end_date: Optional[date] = None,
+        start_date: Optional[date] = None,
+        max_workers: int = 8,
+        force: bool = False,
+    ) -> dict[str, SymbolUpdateDiagnostic]:
+        """并行更新多只股票，返回结构化诊断。"""
+        results: dict[str, SymbolUpdateDiagnostic] = {}
+        target_end = end_date or date.today()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self.update_symbol_diagnostic, sym, target_end, start_date, force): sym
+                for sym in symbols
+            }
+            for future in as_completed(futures):
+                sym = futures[future]
+                try:
+                    results[sym] = future.result()
+                except Exception as e:
+                    logger.error(f"{sym} 更新失败: {e}")
+                    local_min, local_max = self._store.get_available_dates(sym, adjust="raw")
+                    results[sym] = SymbolUpdateDiagnostic(
+                        symbol=sym,
+                        status="download_failed_cache_available" if local_max else "download_failed_no_cache",
+                        new_records=0,
+                        used_cache=local_max is not None,
+                        local_first_date=str(local_min) if local_min else None,
+                        local_last_date=str(local_max) if local_max else None,
+                        requested_start=str(start_date or local_min or date(2000, 1, 1)),
+                        requested_end=str(target_end),
+                        error=str(e),
+                    )
+
+        total = sum(item.new_records for item in results.values())
         logger.info(f"批量更新完成：{len(symbols)} 只股票，共新增 {total} 条记录")
         return results
 

@@ -88,6 +88,30 @@ def test_run_store_persists_completed_result(tmp_path):
         benchmark="000300.SH",
         benchmark_status="unavailable",
         benchmark_error="样本不足",
+        data_diagnostics={
+            "symbols": [
+                {
+                    "symbol": "600519.SH",
+                    "role": "trade_symbol",
+                    "status": "cache_hit",
+                    "new_records": 0,
+                    "used_cache": True,
+                    "local_first_date": "2024-01-02",
+                    "local_last_date": "2024-01-03",
+                    "requested_start": "2024-01-01",
+                    "requested_end": "2024-01-03",
+                    "error": None,
+                }
+            ],
+            "benchmark": None,
+            "summary": {
+                "total": 1,
+                "updated": 0,
+                "cache_hit": 1,
+                "failed": 0,
+                "missing": 0,
+            },
+        },
     )
 
     store.save_result(record.run_id, result, elapsed_seconds=2.5)
@@ -98,3 +122,5 @@ def test_run_store_persists_completed_result(tmp_path):
     assert loaded.progress == 100
     assert loaded.result is not None
     assert loaded.result.benchmark_error == "样本不足"
+    assert loaded.result.data_diagnostics is not None
+    assert loaded.result.data_diagnostics["summary"]["cache_hit"] == 1

@@ -125,3 +125,75 @@ def test_serialize_result_exposes_benchmark_diagnostics():
     assert payload.benchmark_diagnostics.sample_days == 2
     assert payload.benchmark_diagnostics.win_days == 2
     assert payload.benchmark_diagnostics.aligned is True
+
+
+def test_serialize_result_exposes_data_diagnostics():
+    result = BacktestResult(
+        strategy_name="double_ma",
+        symbols=["600519.SH"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 4),
+        initial_capital=1_000_000,
+        metrics=_metrics(),
+        equity_curve=pd.Series(
+            [1_000_000.0, 1_010_000.0],
+            index=[date(2024, 1, 2), date(2024, 1, 3)],
+        ),
+        trades=[],
+        rejected_orders=[],
+        benchmark="000300.SH",
+        data_diagnostics={
+            "symbols": [
+                {
+                    "symbol": "600519.SH",
+                    "role": "trade_symbol",
+                    "status": "updated",
+                    "new_records": 2,
+                    "used_cache": True,
+                    "local_first_date": "2024-01-02",
+                    "local_last_date": "2024-01-03",
+                    "requested_start": "2024-01-01",
+                    "requested_end": "2024-01-04",
+                    "error": None,
+                }
+            ],
+            "benchmark": {
+                "symbol": "000300.SH",
+                "role": "benchmark",
+                "status": "download_failed_cache_available",
+                "new_records": 0,
+                "used_cache": True,
+                "local_first_date": "2024-01-02",
+                "local_last_date": "2024-01-03",
+                "requested_start": "2024-01-01",
+                "requested_end": "2024-01-04",
+                "error": "network down",
+            },
+            "summary": {
+                "total": 2,
+                "updated": 1,
+                "cache_hit": 0,
+                "failed": 1,
+                "missing": 0,
+            },
+        },
+    )
+    record = RunRecord(
+        run_id="run-3",
+        strategy_name="double_ma",
+        symbols=["600519.SH"],
+        start_date="2024-01-01",
+        end_date="2024-01-04",
+        initial_capital=1_000_000,
+        status="completed",
+        result=result,
+        created_at=datetime(2024, 1, 5),
+    )
+
+    payload = serialize_result(record)
+
+    assert payload.data_diagnostics is not None
+    assert payload.data_diagnostics.summary.total == 2
+    assert payload.data_diagnostics.symbols[0].status == "updated"
+    assert payload.data_diagnostics.benchmark is not None
+    assert payload.data_diagnostics.benchmark.error == "network down"

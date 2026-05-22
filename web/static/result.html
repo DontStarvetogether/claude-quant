@@ -106,6 +106,15 @@
       <div id="relative-strength-chart" class="mt-5" style="height: 220px;"></div>
     </section>
 
+    <!-- 数据质量 -->
+    <section id="data-diagnostics" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">数据质量</h2>
+        <span id="data-diagnostics-summary" class="text-xs text-gray-500">—</span>
+      </div>
+      <div id="data-diagnostics-body"></div>
+    </section>
+
     <!-- 权益曲线 -->
     <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <h2 class="text-sm font-semibold text-gray-300 mb-4">权益曲线 & 回撤</h2>
@@ -168,6 +177,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/result.js?v=21"></script>
+  <script src="/static/js/result.js?v=22"></script>
 </body>
 </html>

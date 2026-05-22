@@ -288,6 +288,8 @@ async def trigger_download(req: DownloadRequest) -> dict:
         "done": 0,
         "current": "",
         "errors": [],
+        "results": [],
+        "summary": {"total": len(req.symbols), "updated": 0, "cache_hit": 0, "failed": 0, "missing": 0},
     }
 
     # 在后台线程执行下载
@@ -322,18 +324,39 @@ def _run_download_task(task_id: str, symbols: list[str], start_date_str: str) ->
         for i, symbol in enumerate(symbols):
             task["current"] = symbol
             try:
-                pipeline.update_symbol(
+                diagnostic = pipeline.update_symbol_diagnostic(
                     symbol,
                     end_date=end_date,
                     start_date=start_date,
                     force=False,
-                )
+                ).to_dict()
+                diagnostic["role"] = "trade_symbol"
+                task["results"].append(diagnostic)
+                if diagnostic["status"] in ("download_failed_no_cache", "empty_source"):
+                    task["errors"].append(
+                        f"{symbol}: {diagnostic.get('error') or diagnostic['status']}"
+                    )
             except Exception as e:
                 err_msg = f"{symbol}: {e}"
                 logger.error(f"下载失败 {err_msg}")
                 task["errors"].append(err_msg)
+                local_min, local_max = store.get_available_dates(symbol, adjust="raw")
+                diagnostic = {
+                    "symbol": symbol,
+                    "role": "trade_symbol",
+                    "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
+                    "new_records": 0,
+                    "used_cache": local_max is not None,
+                    "local_first_date": str(local_min) if local_min else None,
+                    "local_last_date": str(local_max) if local_max else None,
+                    "requested_start": str(start_date),
+                    "requested_end": str(end_date),
+                    "error": str(e),
+                }
+                task["results"].append(diagnostic)
             finally:
                 task["done"] = i + 1
+                task["summary"] = _summarize_download_results(task["results"], task["total"])
 
         task["status"] = "completed"
         task["current"] = ""
@@ -367,6 +390,8 @@ async def download_progress(task_id: str) -> StreamingResponse:
                 "done": task["done"],
                 "current": task["current"],
                 "errors": task["errors"],
+                "results": task.get("results", []),
+                "summary": task.get("summary", {}),
             }
 
             if task["status"] in ("completed", "failed"):
@@ -387,3 +412,17 @@ async def download_progress(task_id: str) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _summarize_download_results(results: list[dict], total: int) -> dict:
+    updated = sum(1 for item in results if item.get("status") == "updated")
+    cache_hit = sum(1 for item in results if item.get("status") == "cache_hit")
+    failed = sum(1 for item in results if str(item.get("status", "")).startswith("download_failed"))
+    missing = sum(1 for item in results if item.get("status") in ("download_failed_no_cache", "empty_source"))
+    return {
+        "total": total,
+        "updated": updated,
+        "cache_hit": cache_hit,
+        "failed": failed,
+        "missing": missing,
+    }
