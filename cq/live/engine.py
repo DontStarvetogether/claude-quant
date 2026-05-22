@@ -161,7 +161,8 @@ class LiveEngine:
         bus, portfolio, risk, ctx = self._build_components(store, history_start, end_date)
         self._bus, self._portfolio = bus, portfolio
 
-        calendar = self._load_calendar(store)
+        feed = ctx._feed  # HistoricalFeed，覆盖 history_start → end_date
+        calendar = self._load_calendar(store, fallback_days=feed.trade_dates)
         executor = SimulatedExecutor(bus=bus, portfolio=portfolio, risk=risk)
         matching = BarMatchingEngine(bus, portfolio, calendar, self._config.engine)
 
@@ -307,10 +308,17 @@ class LiveEngine:
         )
 
     @staticmethod
-    def _load_calendar(store: ParquetStore) -> TradingCalendar:
+    def _load_calendar(
+        store: ParquetStore,
+        fallback_days: list[date] | None = None,
+    ) -> TradingCalendar:
         trading_days = store.read_calendar("SSE")
         if not trading_days:
             trading_days = store.read_calendar("SZSE")
+        if not isinstance(trading_days, list):
+            trading_days = []
+        if not trading_days and fallback_days:
+            trading_days = list(fallback_days)
         if not trading_days:
             raise RuntimeError("本地无交易日历数据，请先运行: python scripts/sync_calendar.py")
         return TradingCalendar(trading_days)

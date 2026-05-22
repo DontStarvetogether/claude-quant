@@ -215,8 +215,8 @@ class TestPaperExecutor:
         event = executor.event_queue.get_nowait()
         assert isinstance(event, RejectEvent)
 
-    def test_risk_rejects_oversized_position(self):
-        """单股仓位超过 max_position_pct 应被风控拒绝。"""
+    def test_risk_clamps_oversized_percent_position(self):
+        """percent 信号超过 max_position_pct 时应被风控截断。"""
         executor, _, _ = self._make_executor()
         executor.set_current_date(date(2024, 6, 3))
 
@@ -230,7 +230,8 @@ class TestPaperExecutor:
         executor.on_signal(SignalEvent(signal=sig))
 
         event = executor.event_queue.get_nowait()
-        assert isinstance(event, RejectEvent)
+        assert isinstance(event, FillEvent)
+        assert event.trade.quantity == 2000
 
     def test_fill_amount_correct(self):
         """成交金额 = 价格 × 数量（含滑点）。"""
