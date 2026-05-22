@@ -114,6 +114,18 @@ class EquityCurveData(BaseModel):
     drawdown: list[float]
 
 
+class BenchmarkDiagnostics(BaseModel):
+    sample_days: int = 0
+    missing_days: int = 0
+    win_days: int = 0
+    hit_rate: float = 0.0
+    avg_daily_excess: float = 0.0
+    relative_return: float = 0.0
+    common_start: Optional[str] = None
+    common_end: Optional[str] = None
+    aligned: bool = False
+
+
 class TradeRecord(BaseModel):
     trade_id: str
     symbol: str
@@ -142,6 +154,7 @@ class BacktestResultResponse(BaseModel):
     benchmark_error: Optional[str] = None
     alpha_beta_available: bool = False
     benchmark_curve_available: bool = False
+    benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
     metrics: MetricsDict
     equity_curve: EquityCurveData
     benchmark_curve: Optional[EquityCurveData] = None

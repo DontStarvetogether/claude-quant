@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 from loguru import logger
@@ -63,6 +63,7 @@ class BacktestResult:
     benchmark_status: str = "not_requested"
     benchmark_error: Optional[str] = None
     alpha_beta_available: bool = False
+    benchmark_diagnostics: Optional[dict[str, Any]] = None
 
     def summary(self) -> str:
         header = (
@@ -231,6 +232,7 @@ class BacktestEngine:
         benchmark_status = "not_requested"
         benchmark_error: str | None = None
         alpha_beta_available = False
+        benchmark_diagnostics: dict[str, Any] | None = None
         if benchmark:
             benchmark_status = "unavailable"
             try:
@@ -254,6 +256,10 @@ class BacktestEngine:
                         alpha_beta_available = True
                         perf.compute_benchmark(
                             metrics, strategy_returns, index_feed.returns
+                        )
+                        benchmark_diagnostics = self._benchmark_diagnostics(
+                            equity_series,
+                            index_feed.close,
                         )
                         logger.info(
                             f"基准 {benchmark} | 收益 {metrics.benchmark_return:+.2%} | "
@@ -288,6 +294,7 @@ class BacktestEngine:
             benchmark_status=benchmark_status,
             benchmark_error=benchmark_error,
             alpha_beta_available=alpha_beta_available,
+            benchmark_diagnostics=benchmark_diagnostics,
             trades=all_trades,
             rejected_orders=rejected,
         )
@@ -322,6 +329,55 @@ class BacktestEngine:
                 "本地无交易日历数据，请先运行: python scripts/sync_calendar.py"
             )
         return TradingCalendar(trading_days)
+
+    @staticmethod
+    def _benchmark_diagnostics(
+        equity_curve: pd.Series,
+        benchmark_close: pd.Series,
+    ) -> dict[str, Any]:
+        """计算基准对齐质量和相对表现诊断。"""
+        common = equity_curve.index.intersection(benchmark_close.index)
+        if len(common) < 2:
+            return {
+                "sample_days": 0,
+                "missing_days": int(len(equity_curve.index.difference(benchmark_close.index))),
+                "win_days": 0,
+                "hit_rate": 0.0,
+                "avg_daily_excess": 0.0,
+                "relative_return": 0.0,
+                "common_start": str(common[0]) if len(common) else None,
+                "common_end": str(common[-1]) if len(common) else None,
+                "aligned": False,
+            }
+
+        aligned_equity = equity_curve.loc[common]
+        aligned_benchmark = benchmark_close.loc[common]
+        strategy_returns = aligned_equity.pct_change().dropna()
+        benchmark_returns = aligned_benchmark.pct_change().dropna()
+        common_returns = strategy_returns.index.intersection(benchmark_returns.index)
+        excess = strategy_returns.loc[common_returns] - benchmark_returns.loc[common_returns]
+
+        start_equity = float(aligned_equity.iloc[0])
+        end_equity = float(aligned_equity.iloc[-1])
+        start_benchmark = float(aligned_benchmark.iloc[0])
+        end_benchmark = float(aligned_benchmark.iloc[-1])
+        strategy_norm = end_equity / start_equity if start_equity > 0 else 1.0
+        benchmark_norm = end_benchmark / start_benchmark if start_benchmark > 0 else 1.0
+        relative_return = strategy_norm / benchmark_norm - 1 if benchmark_norm > 0 else 0.0
+
+        sample_days = len(common_returns)
+        missing_days = len(equity_curve.index.difference(benchmark_close.index))
+        return {
+            "sample_days": int(sample_days),
+            "missing_days": int(missing_days),
+            "win_days": int((excess > 0).sum()),
+            "hit_rate": round(float((excess > 0).mean()), 6) if sample_days else 0.0,
+            "avg_daily_excess": round(float(excess.mean()), 8) if sample_days else 0.0,
+            "relative_return": round(float(relative_return), 6),
+            "common_start": str(common[0]),
+            "common_end": str(common[-1]),
+            "aligned": missing_days == 0,
+        }
 
     @staticmethod
     def _parse_date(d: str | date) -> date:

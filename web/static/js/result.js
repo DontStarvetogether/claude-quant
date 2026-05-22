@@ -217,7 +217,11 @@ function renderAlphaBreakdown(data) {
 
   chartEl.classList.remove('hidden');
   const m = data.metrics;
-  const stats = computeBenchmarkBreakdown(data.equity_curve, data.benchmark_curve);
+  const stats = normalizeBenchmarkDiagnostics(
+    data.benchmark_diagnostics,
+    data.equity_curve,
+    data.benchmark_curve,
+  );
   const alphaClass = m.alpha >= 0 ? 'text-red-400' : 'text-green-400';
   const excessClass = m.excess_return >= 0 ? 'text-red-400' : 'text-green-400';
   const relativeClass = stats.relativeFinal >= 0 ? 'text-red-400' : 'text-green-400';
@@ -241,7 +245,7 @@ function renderAlphaBreakdown(data) {
       </div>
       <div class="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
         <div class="text-xs text-gray-500 mb-2">样本质量</div>
-        <div class="text-gray-300">基于 ${stats.sampleDays} 个共同交易日计算；${stats.missingDays > 0 ? `有 ${stats.missingDays} 个策略交易日缺少可对齐基准值。` : '策略和基准日期对齐完整。'}</div>
+        <div class="text-gray-300">基于 ${stats.sampleDays} 个共同交易日计算${stats.commonStart && stats.commonEnd ? `（${stats.commonStart} → ${stats.commonEnd}）` : ''}；${stats.missingDays > 0 ? `有 ${stats.missingDays} 个策略交易日缺少可对齐基准值。` : '策略和基准日期对齐完整。'}</div>
       </div>
     </div>
   `;
@@ -315,6 +319,24 @@ function computeBenchmarkBreakdown(curve, benchCurve) {
     avgDailyExcess: sampleDays > 0 ? excessSum / sampleDays : 0,
     relativeFinal,
     relativeSeries,
+  };
+}
+
+function normalizeBenchmarkDiagnostics(apiStats, curve, benchCurve) {
+  const fallback = computeBenchmarkBreakdown(curve, benchCurve);
+  if (!apiStats) return fallback;
+  return {
+    ...fallback,
+    sampleDays: finite(apiStats.sample_days),
+    missingDays: finite(apiStats.missing_days),
+    winDays: finite(apiStats.win_days),
+    hitRate: finite(apiStats.hit_rate),
+    avgDailyExcess: finite(apiStats.avg_daily_excess),
+    relativeFinal: finite(apiStats.relative_return),
+    commonStart: apiStats.common_start,
+    commonEnd: apiStats.common_end,
+    aligned: apiStats.aligned === true,
+    relativeSeries: fallback.relativeSeries,
   };
 }
 

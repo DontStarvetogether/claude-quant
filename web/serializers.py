@@ -14,6 +14,7 @@ from web.schemas import (
     EquityCurveData,
     MetricsDict,
     TradeRecord,
+    BenchmarkDiagnostics,
 )
 from web.store import RunRecord
 
@@ -154,6 +155,11 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         benchmark_error=getattr(result, "benchmark_error", None),
         alpha_beta_available=bool(getattr(result, "alpha_beta_available", False)),
         benchmark_curve_available=benchmark_curve is not None,
+        benchmark_diagnostics=(
+            BenchmarkDiagnostics(**result.benchmark_diagnostics)
+            if getattr(result, "benchmark_diagnostics", None)
+            else None
+        ),
         metrics=metrics,
         equity_curve=equity_curve,
         benchmark_curve=benchmark_curve,
