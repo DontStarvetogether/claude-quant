@@ -13,7 +13,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 from loguru import logger
@@ -38,6 +38,7 @@ class SymbolUpdateDiagnostic:
     requested_start: str
     requested_end: str
     error: Optional[str] = None
+    data_quality: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -133,7 +134,7 @@ class DataPipeline:
 
             if tail_start is not None and tail_start <= end_date:
                 result = self._download_range_diagnostic(
-                    symbol, tail_start, end_date, recalc_qfq=False, skip_adj=True
+                    symbol, tail_start, end_date, recalc_qfq=False
                 )
                 total_new += result["new_records"]
                 if result["status"] == "failed":
@@ -199,6 +200,7 @@ class DataPipeline:
             requested_start=str(requested_start),
             requested_end=str(end_date),
             error="; ".join(errors) if errors else None,
+            data_quality=self._inspect_local_data_quality(symbol, requested_start, end_date),
         )
 
     def _download_range(
@@ -213,7 +215,7 @@ class DataPipeline:
         下载并存储 [start, end] 区间的数据（内部工具）。
 
         recalc_qfq=True：下载后强制重算整个 qfq 序列（用于头部回填或 force 重下）。
-        skip_adj=True：跳过复权因子下载（增量尾部更新时使用，假设 adj_factor=1.0）。
+        skip_adj：兼容旧调用，当前为保证复权正确性不再跳过复权因子更新。
         """
         if start > end:
             return 0
@@ -253,22 +255,21 @@ class DataPipeline:
         raw_df = self._fill_limit_prices(raw_df, symbol)
         self._store.write_daily_bars(symbol, raw_df, adjust="raw", mode="append")
 
-        adj_df = pd.DataFrame()
-        if not skip_adj:
-            try:
-                adj_df = self._source.fetch_adj_factors(symbol, start, end)
-            except Exception as e:
-                logger.warning(f"{symbol} 复权因子下载失败，使用 1.0: {e}")
-                adj_df = pd.DataFrame()
+        if skip_adj:
+            logger.debug(f"{symbol} skip_adj 已弃用：仍下载复权因子以保证 qfq 正确")
 
-            if not adj_df.empty:
-                self._store.write_adj_factors(symbol, adj_df, mode="append")
+        try:
+            adj_df = self._source.fetch_adj_factors(symbol, start, end)
+        except Exception as e:
+            logger.warning(f"{symbol} 复权因子下载失败，将用本地已有因子重算 qfq: {e}")
+            adj_df = pd.DataFrame()
 
-        has_split = self._adjuster.detect_split_dates(adj_df) if not adj_df.empty else []
-        if recalc_qfq or has_split:
-            self._recalculate_qfq(symbol)
-        else:
-            self._append_qfq(symbol, raw_df, adj_df)
+        if not adj_df.empty:
+            self._store.write_adj_factors(symbol, adj_df, mode="append")
+
+        # 每次写入原始数据后都用完整 raw + 完整 adj_factors 重算 qfq。
+        # 这比尾部 append 慢，但能避免除权日、因子基准变化和部分因子下载导致的静默错价。
+        self._recalculate_qfq(symbol)
 
         new_count = len(raw_df)
         logger.info(f"{symbol} 新增 {new_count} 条记录")
@@ -422,3 +423,43 @@ class DataPipeline:
             if col in new_raw_df.columns:
                 new_qfq[col] = new_raw_df[col].values
         self._store.write_daily_bars(symbol, new_qfq, adjust="qfq", mode="append")
+
+    def _inspect_local_data_quality(
+        self,
+        symbol: str,
+        requested_start: date,
+        requested_end: date,
+    ) -> dict[str, Any]:
+        """给结果页/API 使用的轻量本地数据质量摘要。"""
+        raw_df = self._store.read_daily_bars(symbol, adjust="raw")
+        qfq_df = self._store.read_daily_bars(symbol, adjust="qfq")
+        warnings: list[str] = []
+
+        if raw_df.empty:
+            return {
+                "status": "missing",
+                "warnings": ["raw_empty"],
+                "qfq_available": False,
+                "factor_available": not self._store.read_adj_factors(symbol).empty,
+            }
+
+        dates = pd.to_datetime(raw_df["trade_date"]).dt.date
+        local_first = dates.min()
+        local_last = dates.max()
+        if local_first > requested_start or local_last < requested_end:
+            warnings.append("coverage_incomplete")
+        if raw_df["trade_date"].duplicated().any():
+            warnings.append("duplicate_trade_date")
+        if qfq_df.empty:
+            warnings.append("qfq_missing")
+
+        adj_df = self._store.read_adj_factors(symbol)
+        status = "ok" if not warnings else "degraded"
+        return {
+            "status": status,
+            "warnings": warnings,
+            "qfq_available": not qfq_df.empty,
+            "factor_available": not adj_df.empty,
+            "local_first_date": str(local_first),
+            "local_last_date": str(local_last),
+        }

@@ -143,7 +143,9 @@ function renderMetricCards(m, data) {
   set('m-max-drawdown', Fmt.pct(m.max_drawdown), 'negative');
   set('m-sharpe', Fmt.num(m.sharpe_ratio, 3));
   set('m-win-rate', Fmt.pct(m.win_rate, 1));
-  set('m-total-trades', m.total_trades + ' 笔');
+  const roundTrips = m.round_trip_count ?? m.total_trades ?? 0;
+  const fills = m.fill_count ?? 0;
+  set('m-total-trades', fills ? `${roundTrips} 轮 / ${fills} 成交` : `${roundTrips} 轮`);
   set('m-final-value', Fmt.money(m.final_value));
   
   // 显示持有现金和持仓市值的拆分
@@ -442,6 +444,12 @@ function renderDetailMetrics(m, data = {}) {
     ['平均亏损', Fmt.pct(m.avg_loss, 2), 'negative'],
     ['盈亏比', pf, ''],
     ['平均持仓天数', (m.avg_hold_days || 0).toFixed(1) + ' 天', ''],
+    ['成交笔数', String(m.fill_count ?? data.trades?.length ?? 0), ''],
+    ['完整交易轮次', String(m.round_trip_count ?? m.total_trades ?? 0), ''],
+    ['已实现盈亏', Fmt.money(m.realized_pnl || 0), Fmt.colorClass(m.realized_pnl || 0)],
+    ['未实现/未配对盈亏', Fmt.money(m.unrealized_pnl || 0), Fmt.colorClass(m.unrealized_pnl || 0)],
+    ['撮合模型', data.execution_model || 'next_open', ''],
+    ['引擎版本', data.engine_version || '—', ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
 

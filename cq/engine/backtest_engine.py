@@ -6,8 +6,8 @@ BacktestEngine：回测主循环。
   2. strategy.before_trading(today)
   3. 推送当日所有 BarEvent → strategy.on_bar() → SignalEvent
   4. EventBus.dispatch_all()  按优先级处理所有事件
-  5. 推送 EndOfDayEvent → portfolio.settle_eod()（T+1 解锁）
-  6. strategy.after_trading(today)
+  5. strategy.after_trading(today)
+  6. 推送 EndOfDayEvent → portfolio.settle_eod()（T+1 解锁）
   7. 记录绩效快照
 """
 
@@ -41,6 +41,9 @@ from cq.risk.pre_trade import PreTradeRisk
 from cq.strategy.base import Strategy, StrategyContext
 from cq.utils.config import Config
 
+ENGINE_VERSION = "2026.05.correctness-v1"
+EXECUTION_MODEL = "next_open"
+
 
 @dataclass
 class BacktestResult:
@@ -65,6 +68,10 @@ class BacktestResult:
     alpha_beta_available: bool = False
     benchmark_diagnostics: Optional[dict[str, Any]] = None
     data_diagnostics: Optional[dict[str, Any]] = None
+    data_quality: Optional[dict[str, Any]] = None
+    risk_events: list[dict[str, Any]] = field(default_factory=list)
+    engine_version: str = ENGINE_VERSION
+    execution_model: str = EXECUTION_MODEL
 
     def summary(self) -> str:
         header = (
@@ -148,7 +155,7 @@ class BacktestEngine:
 
         bus = EventBus()
         portfolio = PortfolioManager(self._config.engine)
-        risk = PreTradeRisk(portfolio, self._config.risk)
+        risk = PreTradeRisk(portfolio, self._config.risk, self._config.engine)
         executor = SimulatedExecutor(bus, portfolio, risk)
         matching = BarMatchingEngine(bus, portfolio, calendar, self._config.engine)
         ctx = StrategyContext(portfolio, feed)
@@ -188,6 +195,7 @@ class BacktestEngine:
 
             # 更新持仓市值（用于权益计算）
             portfolio.update_prices(bars)
+            risk.update_equity_state(trade_date)
 
             # 步骤 3：日初回调
             executor.set_current_date(trade_date)
@@ -199,14 +207,14 @@ class BacktestEngine:
                 bus.put(BarEvent(bar=bar))
             bus.dispatch_all()  # 处理 BarEvent → SignalEvent → OrderEvent
 
-            # 步骤 5：EOD 结算（T+1 解锁）
+            # 步骤 5：日末回调。必须早于 T+1 解锁，避免盘后信号看到当日买入已可卖。
+            self._strategy.after_trading(trade_date)
+            bus.dispatch_all()  # 处理 after_trading 中产生的 SignalEvent → OrderEvent
+
+            # 步骤 6：EOD 结算（T+1 解锁）
             eod = EndOfDayEvent(trade_date=trade_date)
             bus.put(eod)
             bus.dispatch_all()
-
-            # 步骤 6：日末回调
-            self._strategy.after_trading(trade_date)
-            bus.dispatch_all()  # 处理 after_trading 中产生的 SignalEvent → OrderEvent
 
             # 步骤 7：记录权益快照
             equity_curve[trade_date] = portfolio.get_total_assets()
@@ -298,6 +306,8 @@ class BacktestEngine:
             alpha_beta_available=alpha_beta_available,
             benchmark_diagnostics=benchmark_diagnostics,
             data_diagnostics=data_diagnostics,
+            data_quality=self._data_quality(data_diagnostics),
+            risk_events=risk.events,
             trades=all_trades,
             rejected_orders=rejected,
         )
@@ -332,6 +342,30 @@ class BacktestEngine:
                 "本地无交易日历数据，请先运行: python scripts/sync_calendar.py"
             )
         return TradingCalendar(trading_days)
+
+    @staticmethod
+    def _data_quality(data_diagnostics: dict[str, Any] | None) -> dict[str, Any] | None:
+        """从数据准备诊断中提炼结果级数据质量摘要。"""
+        if not data_diagnostics:
+            return None
+        summary = data_diagnostics.get("summary", {})
+        missing = int(summary.get("missing", 0) or 0)
+        failed = int(summary.get("failed", 0) or 0)
+        total = int(summary.get("total", 0) or 0)
+        if missing:
+            status = "missing"
+        elif failed:
+            status = "degraded"
+        elif total:
+            status = "ok"
+        else:
+            status = "unknown"
+        return {
+            "status": status,
+            "total": total,
+            "failed": failed,
+            "missing": missing,
+        }
 
     @staticmethod
     def _benchmark_diagnostics(

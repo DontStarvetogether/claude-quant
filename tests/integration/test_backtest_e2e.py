@@ -133,6 +133,7 @@ def run_mini_backtest(strategy: Strategy) -> tuple[dict, list, list]:
         bus.dispatch_all()
 
         portfolio.update_prices([bar])
+        risk.update_equity_state(trade_date)
         executor.set_current_date(trade_date)
         ctx._set_date(trade_date)
         strategy.before_trading(trade_date)
@@ -140,10 +141,12 @@ def run_mini_backtest(strategy: Strategy) -> tuple[dict, list, list]:
         bus.put(BarEvent(bar=bar))
         bus.dispatch_all()
 
+        strategy.after_trading(trade_date)
+        bus.dispatch_all()
+
         bus.put(EndOfDayEvent(trade_date=trade_date))
         bus.dispatch_all()
 
-        strategy.after_trading(trade_date)
         equity[trade_date] = portfolio.get_total_assets()
 
     return equity, fills, rejects
@@ -168,6 +171,70 @@ class TestT1Constraint:
 
         assert len(buy_fills) == 1
         assert len(sell_fills) == 0  # 卖出应被拒绝
+
+    def test_after_trading_before_eod_unlock(self):
+        """盘后信号发生在 T+1 解锁前，当日买入不能在 after_trading 中立刻变成可卖。"""
+
+        class BuyThenAfterTradingSellSameDay(Strategy):
+            strategy_id = "test_after_trading_t1"
+
+            def on_init(self):
+                self._bought = False
+                self._sold = False
+
+            def on_bar(self, bar: Bar):
+                if self.ctx.get_trade_date() == date(2024, 1, 2) and not self._bought:
+                    self.buy(bar.symbol, quantity=100)
+                    self._bought = True
+
+            def after_trading(self, trade_date: date):
+                if trade_date == date(2024, 1, 3) and not self._sold:
+                    self.sell("000001.SZ")
+                    self._sold = True
+
+        _, fills, rejects = run_mini_backtest(BuyThenAfterTradingSellSameDay())
+
+        buy_fills = [f for f in fills if f.side == OrderSide.BUY]
+        sell_fills = [f for f in fills if f.side == OrderSide.SELL]
+
+        assert len(buy_fills) == 1
+        assert len(sell_fills) == 0
+        assert any(("T+1限制" in reason or "卖出数量为零" in reason) for _, reason in rejects)
+
+
+class TestCashConstraint:
+    def test_gap_up_percent_buy_is_shrunk_and_cash_non_negative(self):
+        """百分比买入遇到次日跳空和最低佣金时，应按可用现金缩量且现金不为负。"""
+
+        class AllInBuyDay1(Strategy):
+            strategy_id = "test_cash_guard"
+
+            def on_bar(self, bar: Bar):
+                if self.ctx.get_trade_date() == date(2024, 1, 2):
+                    self.buy(bar.symbol, percent=1.0)
+
+        custom_bars = {
+            **BARS,
+            date(2024, 1, 3): make_bar(
+                "000001.SZ",
+                date(2024, 1, 3),
+                open_=12.0,
+                close=12.0,
+                pre_close=10.0,
+                limit_up=20.0,
+                limit_down=5.0,
+            ),
+        }
+
+        with patch.dict(BARS, custom_bars, clear=True):
+            equity, fills, rejects = run_mini_backtest(AllInBuyDay1())
+
+        buy_fills = [f for f in fills if f.side == OrderSide.BUY]
+        assert len(buy_fills) == 1
+        assert buy_fills[0].quantity < 9900
+        assert buy_fills[0].net_amount <= 100_000
+        assert equity[date(2024, 1, 3)] >= 0
+        assert not any("现金不足" in reason for _, reason in rejects)
 
 
 class TestNoLookAheadBias:

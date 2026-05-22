@@ -39,6 +39,10 @@ function renderDataDiagnosticCard(item) {
   const requested = item.requested_start && item.requested_end
     ? `${item.requested_start} → ${item.requested_end}`
     : '—';
+  const quality = item.data_quality || {};
+  const qualityText = quality.status
+    ? `${qualityStatusLabel(quality.status)}${(quality.warnings || []).length ? ` · ${(quality.warnings || []).join(', ')}` : ''}`
+    : '—';
   return `
     <div class="rounded-lg border ${meta.border} bg-gray-950/40 px-3 py-3">
       <div class="flex items-start justify-between gap-3 mb-2">
@@ -52,6 +56,7 @@ function renderDataDiagnosticCard(item) {
         <div class="flex justify-between gap-3"><span class="text-gray-600">新增</span><span class="text-gray-300">${Number(item.new_records || 0).toLocaleString()} 条</span></div>
         <div class="flex justify-between gap-3"><span class="text-gray-600">本地区间</span><span class="text-gray-400 text-right">${escapeHtml(dates)}</span></div>
         <div class="flex justify-between gap-3"><span class="text-gray-600">请求区间</span><span class="text-gray-500 text-right">${escapeHtml(requested)}</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-600">质量</span><span class="text-gray-400 text-right">${escapeHtml(qualityText)}</span></div>
         ${item.error ? `<div class="pt-1 text-yellow-300">${escapeHtml(item.error)}</div>` : ''}
       </div>
     </div>
@@ -91,4 +96,14 @@ function dataStatusMeta(status) {
     border: 'border-gray-800',
     badge: 'border-gray-700 bg-gray-900 text-gray-300',
   };
+}
+
+function qualityStatusLabel(status) {
+  const map = {
+    ok: '完整',
+    degraded: '需注意',
+    missing: '缺失',
+    unknown: '未知',
+  };
+  return map[status] || status || '未知';
 }

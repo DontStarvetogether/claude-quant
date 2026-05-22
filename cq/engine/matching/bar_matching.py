@@ -28,6 +28,7 @@ from cq.core.models import (
 from cq.data.calendar import TradingCalendar
 from cq.engine.portfolio import PortfolioManager
 from cq.utils.config import EngineConfig
+from cq.utils.trading_rules import AStockRules
 
 
 class BarMatchingEngine:
@@ -118,7 +119,12 @@ class BarMatchingEngine:
 
         # 滑点：买入方向价格上浮
         fill_price = self._apply_slippage(fill_price, OrderSide.BUY, bar)
-        self._fill(order, fill_price, bar)
+
+        quantity = self._resolve_buy_quantity(order, fill_price)
+        if quantity <= 0:
+            return
+
+        self._fill(order, fill_price, bar, quantity=quantity)
 
     def _match_sell(self, order: Order, bar: Bar) -> None:
         # T+1 最终检查（PreTradeRisk 已检查，这里是最后防线）
@@ -164,8 +170,60 @@ class BarMatchingEngine:
                 return bar.limit_down
             return adj_price
 
-    def _fill(self, order: Order, price: float, bar: Bar) -> None:
-        amount = price * order.quantity
+    def _resolve_buy_quantity(self, order: Order, price: float) -> int:
+        """成交前按真实开盘价、滑点和佣金做现金保护。"""
+        cash = self._portfolio.get_cash()
+        requested = order.quantity
+        required = self._buy_total_cost(price, requested)
+        if required <= cash + 1e-6:
+            return requested
+
+        if not order.allow_partial_fill:
+            self._reject(
+                order,
+                f"现金不足: 可用{cash:.2f}，买入{requested}股含费用需{required:.2f}",
+            )
+            return 0
+
+        affordable = self._max_affordable_quantity(price, cash)
+        if affordable <= 0:
+            self._reject(
+                order,
+                f"现金不足: 可用{cash:.2f}，无法按整手买入（开盘{price:.2f}）",
+            )
+            return 0
+
+        logger.info(
+            f"买入缩量 {order.symbol}: 请求{requested}股，"
+            f"可用现金{cash:.2f}，实际成交{affordable}股"
+        )
+        return affordable
+
+    def _buy_total_cost(self, price: float, quantity: int) -> float:
+        amount = price * quantity
+        commission = max(
+            amount * self._config.commission_rate,
+            self._config.min_commission,
+        )
+        return amount + round(commission, 2)
+
+    def _max_affordable_quantity(self, price: float, cash: float) -> int:
+        if price <= 0 or cash <= 0:
+            return 0
+        quantity = AStockRules.round_to_lot(cash / price)
+        while quantity > 0 and self._buy_total_cost(price, quantity) > cash + 1e-6:
+            quantity -= 100
+        return quantity
+
+    def _fill(
+        self,
+        order: Order,
+        price: float,
+        bar: Bar,
+        quantity: int | None = None,
+    ) -> None:
+        fill_quantity = quantity if quantity is not None else order.quantity
+        amount = price * fill_quantity
         commission = max(
             amount * self._config.commission_rate,
             self._config.min_commission,
@@ -181,7 +239,7 @@ class BarMatchingEngine:
             order_id=order.order_id,
             symbol=order.symbol,
             side=order.side,
-            quantity=order.quantity,
+            quantity=fill_quantity,
             price=price,
             amount=amount,
             commission=round(commission, 2),

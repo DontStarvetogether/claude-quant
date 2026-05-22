@@ -14,8 +14,14 @@ from web.routers.data import _summarize_download_results
 
 
 class FakeSource(DataSource):
-    def __init__(self, bars: pd.DataFrame | None = None, exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        bars: pd.DataFrame | None = None,
+        adj: pd.DataFrame | None = None,
+        exc: Exception | None = None,
+    ) -> None:
         self.bars = bars if bars is not None else pd.DataFrame()
+        self.adj = adj if adj is not None else pd.DataFrame()
         self.exc = exc
 
     def fetch_daily_bars(self, symbol: str, start_date: date, end_date: date) -> pd.DataFrame:
@@ -28,7 +34,11 @@ class FakeSource(DataSource):
         return df[(dates >= start_date) & (dates <= end_date)].reset_index(drop=True)
 
     def fetch_adj_factors(self, symbol: str, start_date: date, end_date: date) -> pd.DataFrame:
-        return pd.DataFrame()
+        if self.adj.empty:
+            return pd.DataFrame()
+        df = self.adj.copy()
+        dates = pd.to_datetime(df["trade_date"]).dt.date
+        return df[(dates >= start_date) & (dates <= end_date)].reset_index(drop=True)
 
     def fetch_trading_calendar(self, exchange: str, year: int) -> list[date]:
         return []
@@ -137,3 +147,28 @@ def test_download_progress_summary_counts_statuses():
         "failed": 2,
         "missing": 2,
     }
+
+
+def test_tail_update_recalculates_qfq_when_adj_factor_changes(tmp_path):
+    store = ParquetStore(tmp_path)
+    calendar = TradingCalendar([date(2024, 1, 2), date(2024, 1, 3)])
+    bars = make_bars([date(2024, 1, 2), date(2024, 1, 3)])
+    bars.loc[bars["trade_date"] == date(2024, 1, 2), ["open", "high", "low", "close"]] = 10.0
+    bars.loc[bars["trade_date"] == date(2024, 1, 3), ["open", "high", "low", "close"]] = 20.0
+    adj = pd.DataFrame({
+        "trade_date": [date(2024, 1, 2), date(2024, 1, 3)],
+        "adj_factor": [1.0, 2.0],
+    })
+
+    pipeline = DataPipeline(FakeSource(bars, adj), store, calendar)
+    pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 2), start_date=date(2024, 1, 2))
+    qfq_before = store.read_daily_bars("600519.SH", adjust="qfq")
+    assert float(qfq_before.loc[0, "close"]) == 10.0
+
+    pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
+    qfq_after = store.read_daily_bars("600519.SH", adjust="qfq")
+
+    assert qfq_after["close"].tolist() == [20.0, 20.0]
+    assert qfq_after["adj_factor"].tolist() == [2.0, 1.0]
+    diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
+    assert diag.data_quality["status"] == "ok"

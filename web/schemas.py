@@ -89,6 +89,10 @@ class MetricsDict(BaseModel):
     avg_loss: float
     profit_factor: Optional[float] = None
     avg_hold_days: float
+    fill_count: int = 0
+    round_trip_count: int = 0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
     total_fees: float
     total_commission: float  # 总佣金
     total_stamp_tax: float  # 总印花税
@@ -137,6 +141,7 @@ class SymbolDataDiagnostic(BaseModel):
     requested_start: Optional[str] = None
     requested_end: Optional[str] = None
     error: Optional[str] = None
+    data_quality: Optional[dict[str, Any]] = None
 
 
 class DataDiagnosticsSummary(BaseModel):
@@ -181,6 +186,10 @@ class BacktestResultResponse(BaseModel):
     benchmark_error: Optional[str] = None
     alpha_beta_available: bool = False
     benchmark_curve_available: bool = False
+    engine_version: Optional[str] = None
+    execution_model: Optional[str] = None
+    data_quality: Optional[dict[str, Any]] = None
+    risk_events: list[dict[str, Any]] = Field(default_factory=list)
     benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
     data_diagnostics: Optional[DataDiagnostics] = None
     metrics: MetricsDict

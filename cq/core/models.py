@@ -101,6 +101,7 @@ class Order:
     quantity: int            # 明确的股数（100 整数倍）
     limit_price: Optional[float]
     trade_date: date         # 下单交易日（D 日），D+1 才撮合
+    allow_partial_fill: bool = True  # 资金不足时是否允许按整手缩量成交
     status: OrderStatus = OrderStatus.PENDING
     created_at: Optional[datetime] = None
 

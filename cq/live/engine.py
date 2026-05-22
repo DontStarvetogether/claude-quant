@@ -170,7 +170,7 @@ class LiveEngine:
             f"纸上交易模式（D+1 撮合）  策略={self._strategy.strategy_id}  "
             f"{start_date}→{end_date}  标的={self._symbols}"
         )
-        self._run_paper_loop(bus, portfolio, executor, matching, ctx, start_date)
+        self._run_paper_loop(bus, portfolio, risk, executor, matching, ctx, start_date)
 
     def stop(self) -> None:
         """线程安全地停止引擎。"""
@@ -243,6 +243,7 @@ class LiveEngine:
         self,
         bus: EventBus,
         portfolio: PortfolioManager,
+        risk: PreTradeRisk,
         executor,
         matching,
         ctx: StrategyContext,
@@ -256,8 +257,8 @@ class LiveEngine:
           2. matching.process_pending_orders() → 撮合前日订单（D+1）
           3. portfolio.update_prices() → 更新持仓市值
           4. before_trading → 推送 BarEvent → SignalEvent → OrderEvent
-          5. EndOfDayEvent → settle_eod（T+1 解锁）
-          6. after_trading
+          5. after_trading
+          6. EndOfDayEvent → settle_eod（T+1 解锁）
         """
         self._register_handlers(bus, portfolio, executor, self._strategy)
         bus.subscribe(OrderEvent, matching.on_order)
@@ -280,6 +281,7 @@ class LiveEngine:
 
             # 步骤 3：更新持仓市值
             portfolio.update_prices(bars)
+            risk.update_equity_state(trade_date)
 
             # 步骤 4：日初回调 + 推送 BarEvent
             executor.set_current_date(trade_date)
@@ -290,12 +292,12 @@ class LiveEngine:
                 bus.put(BarEvent(bar=bar))
             bus.dispatch_all()
 
-            # 步骤 5：EOD 结算（T+1 解锁）
-            bus.put(EndOfDayEvent(trade_date=trade_date))
+            # 步骤 5：日末回调。必须早于 T+1 解锁，避免盘后信号看到当日买入已可卖。
+            self._strategy.after_trading(trade_date)
             bus.dispatch_all()
 
-            # 步骤 6：日末回调
-            self._strategy.after_trading(trade_date)
+            # 步骤 6：EOD 结算（T+1 解锁）
+            bus.put(EndOfDayEvent(trade_date=trade_date))
             bus.dispatch_all()
 
             logger.debug(
@@ -341,7 +343,7 @@ class LiveEngine:
         )
         bus = EventBus()
         portfolio = PortfolioManager(self._config.engine)
-        risk = PreTradeRisk(portfolio, self._config.risk)
+        risk = PreTradeRisk(portfolio, self._config.risk, self._config.engine)
         ctx = StrategyContext(portfolio, hist_feed)
         return bus, portfolio, risk, ctx
 

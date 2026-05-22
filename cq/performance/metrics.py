@@ -21,6 +21,7 @@ from cq.core.models import OrderSide, Trade
 @dataclass
 class CompletedTrade:
     symbol: str
+    quantity: int
     buy_date: date
     sell_date: date
     pnl: float       # 绝对盈亏（元，已扣费）
@@ -63,6 +64,10 @@ class MetricsResult:
     tracking_error: float = 0.0
     benchmark_return: float = 0.0
     benchmark_annual_return: float = 0.0
+    fill_count: int = 0
+    round_trip_count: int = 0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -74,6 +79,10 @@ class MetricsResult:
             "sortino_ratio": self.sortino_ratio,
             "calmar_ratio": self.calmar_ratio,
             "total_trades": self.total_trades,
+            "fill_count": self.fill_count,
+            "round_trip_count": self.round_trip_count,
+            "realized_pnl": self.realized_pnl,
+            "unrealized_pnl": self.unrealized_pnl,
             "win_rate": self.win_rate,
             "avg_profit": self.avg_profit,
             "avg_loss": self.avg_loss,
@@ -182,6 +191,8 @@ class PerformanceMetrics:
         # 交易统计
         completed = self._pair_trades(trades)
         trade_stats = self._summarize_trades(completed)
+        realized_pnl = trade_stats["realized_pnl"]
+        unrealized_pnl = (final - initial) - realized_pnl
 
         # 费用
         total_fees = sum(t.commission + t.stamp_tax for t in trades)
@@ -195,6 +206,10 @@ class PerformanceMetrics:
             sortino_ratio=round(sortino, 4),
             calmar_ratio=round(calmar, 4),
             total_trades=trade_stats["total_trades"],
+            fill_count=len(trades),
+            round_trip_count=trade_stats["total_trades"],
+            realized_pnl=round(realized_pnl, 2),
+            unrealized_pnl=round(unrealized_pnl, 2),
             win_rate=round(trade_stats["win_rate"], 4),
             avg_profit=round(trade_stats["avg_profit"], 6),
             avg_loss=round(trade_stats["avg_loss"], 6),
@@ -209,29 +224,50 @@ class PerformanceMetrics:
 
     @staticmethod
     def _pair_trades(trades: list[Trade]) -> list[CompletedTrade]:
-        """FIFO 方式将 BUY/SELL 配对，计算每笔完整交易的盈亏。"""
-        buy_queue: dict[str, deque[Trade]] = defaultdict(deque)
+        """FIFO 方式将 BUY/SELL 配对，支持部分卖出和多笔买入。"""
+        buy_queue: dict[str, deque[dict]] = defaultdict(deque)
         completed: list[CompletedTrade] = []
 
         for trade in sorted(trades, key=lambda t: t.trade_time):
             if trade.side == OrderSide.BUY:
-                buy_queue[trade.symbol].append(trade)
-            elif buy_queue[trade.symbol]:
-                buy_trade = buy_queue[trade.symbol].popleft()
-                total_cost = buy_trade.amount + buy_trade.commission
-                net_proceeds = trade.amount - trade.commission - trade.stamp_tax
+                buy_queue[trade.symbol].append({
+                    "quantity": trade.quantity,
+                    "cost_per_share": (trade.amount + trade.commission) / trade.quantity,
+                    "trade_date": trade.trade_date,
+                })
+                continue
+
+            remaining = trade.quantity
+            if remaining <= 0:
+                continue
+
+            proceeds_per_share = (
+                (trade.amount - trade.commission - trade.stamp_tax) / trade.quantity
+            )
+            queue = buy_queue[trade.symbol]
+            while remaining > 0 and queue:
+                lot = queue[0]
+                matched_qty = min(remaining, lot["quantity"])
+                total_cost = lot["cost_per_share"] * matched_qty
+                net_proceeds = proceeds_per_share * matched_qty
                 pnl = net_proceeds - total_cost
                 pnl_pct = pnl / total_cost if total_cost > 0 else 0.0
-                hold_days = (trade.trade_date - buy_trade.trade_date).days
+                hold_days = (trade.trade_date - lot["trade_date"]).days
 
                 completed.append(CompletedTrade(
                     symbol=trade.symbol,
-                    buy_date=buy_trade.trade_date,
+                    quantity=matched_qty,
+                    buy_date=lot["trade_date"],
                     sell_date=trade.trade_date,
                     pnl=pnl,
                     pnl_pct=pnl_pct,
                     hold_days=hold_days,
                 ))
+
+                lot["quantity"] -= matched_qty
+                remaining -= matched_qty
+                if lot["quantity"] <= 0:
+                    queue.popleft()
 
         return completed
 
@@ -245,6 +281,7 @@ class PerformanceMetrics:
                 "avg_loss": 0.0,
                 "profit_factor": 0.0,
                 "avg_hold_days": 0.0,
+                "realized_pnl": 0.0,
             }
 
         wins = [t for t in completed if t.pnl_pct > 0]
@@ -269,6 +306,7 @@ class PerformanceMetrics:
             "avg_loss": avg_loss,
             "profit_factor": profit_factor,
             "avg_hold_days": avg_hold_days,
+            "realized_pnl": sum(t.pnl for t in completed),
         }
 
     def compute_benchmark(
@@ -341,7 +379,9 @@ class PerformanceMetrics:
         return MetricsResult(
             total_return=0.0, annual_return=0.0, max_drawdown=0.0, volatility=0.0,
             sharpe_ratio=0.0, sortino_ratio=0.0, calmar_ratio=0.0,
-            total_trades=0, win_rate=0.0, avg_profit=0.0, avg_loss=0.0,
+            total_trades=0, fill_count=0, round_trip_count=0,
+            realized_pnl=0.0, unrealized_pnl=0.0,
+            win_rate=0.0, avg_profit=0.0, avg_loss=0.0,
             profit_factor=0.0, avg_hold_days=0.0,
             total_fees=0.0, final_value=initial, initial_value=initial,
             max_drawdown_start=None, max_drawdown_end=None,

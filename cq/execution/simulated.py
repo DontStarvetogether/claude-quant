@@ -74,6 +74,7 @@ class SimulatedExecutor:
             quantity=quantity,
             limit_price=signal.limit_price,
             trade_date=self._current_date or date.today(),
+            allow_partial_fill=signal.quantity is None,
             status=OrderStatus.PENDING,
             created_at=event.timestamp,
         )

@@ -68,6 +68,13 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         for t in result.trades:
             total_commission += t.commission
             total_stamp_tax += t.stamp_tax
+
+    fill_count = int(getattr(m, "fill_count", 0) or 0)
+    if fill_count == 0 and result.trades:
+        fill_count = len(result.trades)
+    round_trip_count = int(getattr(m, "round_trip_count", 0) or 0)
+    if round_trip_count == 0:
+        round_trip_count = int(getattr(m, "total_trades", 0) or 0)
     
     metrics = MetricsDict(
         total_return=_safe_float(m.total_return) or 0.0,
@@ -83,6 +90,10 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         avg_loss=_safe_float(m.avg_loss) or 0.0,
         profit_factor=_safe_float(m.profit_factor),
         avg_hold_days=_safe_float(m.avg_hold_days) or 0.0,
+        fill_count=fill_count,
+        round_trip_count=round_trip_count,
+        realized_pnl=_safe_float(getattr(m, "realized_pnl", 0.0)) or 0.0,
+        unrealized_pnl=_safe_float(getattr(m, "unrealized_pnl", 0.0)) or 0.0,
         total_fees=_safe_float(m.total_fees) or 0.0,
         total_commission=round(total_commission, 2),
         total_stamp_tax=round(total_stamp_tax, 2),
@@ -141,6 +152,7 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
             benchmark_status = "available"
         else:
             benchmark_status = "unavailable"
+    result_state = getattr(result, "__dict__", {})
 
     return BacktestResultResponse(
         run_id=record.run_id,
@@ -156,6 +168,10 @@ def serialize_result(record: RunRecord) -> BacktestResultResponse:
         benchmark_error=getattr(result, "benchmark_error", None),
         alpha_beta_available=bool(getattr(result, "alpha_beta_available", False)),
         benchmark_curve_available=benchmark_curve is not None,
+        engine_version=result_state.get("engine_version") or "legacy",
+        execution_model=result_state.get("execution_model") or "next_open",
+        data_quality=result_state.get("data_quality"),
+        risk_events=result_state.get("risk_events") or [],
         benchmark_diagnostics=(
             BenchmarkDiagnostics(**result.benchmark_diagnostics)
             if getattr(result, "benchmark_diagnostics", None)
