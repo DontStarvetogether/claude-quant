@@ -20,7 +20,7 @@
 | Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记 |
 | Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告，并支持 CSV/JSON/Markdown 标准导出；`scripts/run_factor_report.py` 可从 CSV 生成报告 |
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
-| Phase 5 股票池体系升级 | 进行中 | 已新增 `cq/universe`、`StaticUniverseProvider`、`LiquidUniverseProvider` 和 `StoreBackedLiquidUniverseProvider`；`ALL_A_LIQUID` 已可从 `ParquetStore` 本地 bars 动态筛选；PIT 成分股待做 |
+| Phase 5 股票池体系升级 | 已完成初版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；PIT 可从 CSV/DataFrame 按日期解析，真实指数历史成分股数据接入待做 |
 | Phase 6 平台交叉验证 | 已完成初版 | 已新增 `cq/benchmark/cross_validation.py` 和 `docs/cross_validation_report.md`；可比较每日净值、持仓、成交并导出差异报告；真实外部平台样本对账待执行 |
 | Phase 7 模拟盘 / 实盘安全层 | 进行中 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫基础件，并接入 Paper/QMT 执行器幂等入口；每日交易日报和异常报警通道已完成初版；重启恢复/通知渠道接线仍待做 |
 
@@ -37,7 +37,8 @@
    - 第一版 `UniverseProvider` 已完成，静态预设已从 Web 层下沉到核心包
    - `ALL_A_LIQUID` 初版已完成：按交易日从日线数据筛选非 ST、非停牌、足够上市天数、足够成交额、价格正常、无长期零成交的动态股票池，并输出逐股票诊断
    - 已补 `ParquetStore.list_symbols()` 和 `StoreBackedLiquidUniverseProvider`，可直接从本地 qfq/raw bars 构建动态流动性池
-   - 下一步做 PIT 指数成分股，或先建立平台交叉验证模板
+   - 已补 `PointInTimeUniverseProvider`，可从 CSV/DataFrame 解析历史成分股生效区间
+   - 下一步接真实 HS300/ZZ500/ZZ1000 历史成分股数据文件
 
 3. **Phase 3 后续增强**
    - CSV/JSON/Markdown 导出已完成初版
@@ -778,7 +779,8 @@ build_all_a_liquid_universe()
 ```text
 已接入 ParquetStore，自动从本地全量候选股票读取 bars
 补退市整理 / 当前股票名称状态的 point-in-time 支持
-补 HS300_PIT / ZZ500_PIT / ZZ1000_PIT 历史成分股
+已补 PointInTimeUniverseProvider 通用能力
+补 HS300_PIT / ZZ500_PIT / ZZ1000_PIT 真实历史成分股数据源
 ```
 
 ---

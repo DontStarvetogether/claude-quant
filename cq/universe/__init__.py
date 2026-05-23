@@ -10,6 +10,7 @@ from cq.universe.liquid import (
     build_all_a_liquid_universe,
     select_all_a_liquid_universe,
 )
+from cq.universe.pit import PointInTimeUniverseProvider
 from cq.universe.presets import (
     BUILTIN_UNIVERSES,
     get_builtin_universe_presets,
@@ -23,6 +24,7 @@ __all__ = [
     "LiquidUniverseConfig",
     "LiquidUniverseProvider",
     "LiquidUniverseSelection",
+    "PointInTimeUniverseProvider",
     "StoreBackedLiquidUniverseProvider",
     "StaticUniverseProvider",
     "Universe",
