@@ -8,7 +8,13 @@ from cq.live.engine import LiveEngine
 from cq.strategy.base import Strategy
 from cq.utils.config import Config
 from web import live_runner
-from web.live_runner import LiveSession, _configure_engine_state, _export_session_daily_report
+from web.live_runner import (
+    LiveSession,
+    _configure_engine_state,
+    _export_session_daily_report,
+    load_daily_report_snapshot,
+    load_recovery_snapshot,
+)
 
 
 class _NoopStrategy(Strategy):
@@ -45,6 +51,13 @@ def test_configure_engine_state_wires_idempotency_and_recovery(tmp_path):
     assert state.metadata["strategy_id"] == "noop"
     assert state.metadata["symbols"] == ["600519.SH"]
     assert (tmp_path / "live_state" / "idempotency" / "session-1.json").exists()
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"data:\n  root: {tmp_path}\n", encoding="utf-8")
+    snapshot = load_recovery_snapshot("session-1", str(config_path))
+    assert snapshot is not None
+    assert snapshot["session_id"] == "session-1"
+    assert snapshot["idempotency_keys"] == ["intent-key"]
 
 
 def test_export_session_daily_report_writes_report_files(tmp_path, monkeypatch):
@@ -102,3 +115,10 @@ def test_export_session_daily_report_writes_report_files(tmp_path, monkeypatch):
     assert (output_dir / "daily_report.md").exists()
     assert (output_dir / "daily_summary.json").exists()
     assert (output_dir / "trades.csv").exists()
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"data:\n  root: {tmp_path}\n", encoding="utf-8")
+    snapshot = load_daily_report_snapshot("session-1", str(config_path))
+    assert snapshot is not None
+    assert snapshot["summary"]["session_id"] == "session-1"
+    assert snapshot["markdown"].startswith("# 每日交易日报")

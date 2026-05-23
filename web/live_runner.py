@@ -234,6 +234,40 @@ def _export_session_daily_report(
         logger.warning(f"导出每日交易日报失败 session={session.session_id}: {exc}")
 
 
+def load_recovery_snapshot(
+    session_id: str,
+    config_path: str = "config/local.yaml",
+) -> dict[str, Any] | None:
+    """Load a persisted recovery snapshot for API display."""
+    config = Config.from_yaml(config_path)
+    state = LiveRecoveryStore(config.data.root_path / "live_state" / "recovery").load(session_id)
+    return state.to_dict() if state is not None else None
+
+
+def load_daily_report_snapshot(
+    session_id: str,
+    config_path: str = "config/local.yaml",
+) -> dict[str, Any] | None:
+    """Load a persisted daily report summary and markdown for API display."""
+    config = Config.from_yaml(config_path)
+    report_dir = config.data.root_path / "live_state" / "reports" / session_id
+    summary_path = report_dir / "daily_summary.json"
+    report_path = report_dir / "daily_report.md"
+    if not summary_path.exists() or not report_path.exists():
+        return None
+    return {
+        "session_id": session_id,
+        "summary": json.loads(summary_path.read_text(encoding="utf-8")),
+        "markdown": report_path.read_text(encoding="utf-8"),
+        "files": {
+            "report": str(report_path),
+            "summary": str(summary_path),
+            "trades": str(report_dir / "trades.csv"),
+            "positions": str(report_dir / "positions.csv"),
+        },
+    }
+
+
 def _run_paper(
     session: LiveSession,
     start_date: str,

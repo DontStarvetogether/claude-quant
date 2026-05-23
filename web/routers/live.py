@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from contextlib import suppress
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from cq.strategy.registry import validate_strategy_params
-from web.live_runner import live_store, start_paper_session, start_live_session, stop_session
 from web import db
+from web.live_runner import (
+    live_store,
+    load_daily_report_snapshot,
+    load_recovery_snapshot,
+    start_live_session,
+    start_paper_session,
+    stop_session,
+)
 from web.schemas import (
     LiveSessionsResponse,
     LiveSessionStatus,
@@ -96,10 +104,8 @@ async def get_status(session_id: str) -> LiveSessionStatus:
     # 从 DB 加载持仓快照
     positions: list[dict] = []
     if d.get("final_positions"):
-        try:
+        with suppress(json.JSONDecodeError, TypeError):
             positions = json.loads(d["final_positions"])
-        except (json.JSONDecodeError, TypeError):
-            pass
 
     # 从 DB 加载成交记录（停止的会话返回全部，便于完整查看）
     trades = db.get_trades(session_id)
@@ -222,6 +228,24 @@ async def get_trades(session_id: str) -> list[dict]:
 async def get_equity(session_id: str) -> list[dict]:
     """获取会话的净值曲线数据。"""
     return db.get_equity_curve(session_id)
+
+
+@router.get("/{session_id}/recovery")
+async def get_recovery(session_id: str) -> dict:
+    """获取会话的恢复状态快照。"""
+    snapshot = load_recovery_snapshot(session_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"session {session_id} 恢复状态不存在")
+    return snapshot
+
+
+@router.get("/{session_id}/daily-report")
+async def get_daily_report(session_id: str) -> dict:
+    """获取会话的每日交易日报。"""
+    report = load_daily_report_snapshot(session_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"session {session_id} 交易日报不存在")
+    return report
 
 
 def _get_elapsed(s: object, d: dict | None = None) -> float:
