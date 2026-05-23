@@ -497,6 +497,8 @@
           initial_capital: capital,
           strategy_params: params,
           risk: { max_position_pct: 0.95, min_cash_reserve: 0.05 },
+          enable_capacity_limit: true,
+          max_volume_participation: 0.10,
         });
 
         await waitForCompletion(run_id, row.rowId, row.color);

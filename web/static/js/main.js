@@ -641,6 +641,7 @@ function setupRiskSliders() {
   const maxPos = document.getElementById('max-pos-pct');
   const minCash = document.getElementById('min-cash-reserve');
   const slippage = document.getElementById('slippage');
+  const capacity = document.getElementById('capacity-participation');
   maxPos.addEventListener('input', () => {
     document.getElementById('max-pos-label').textContent = maxPos.value + '%';
   });
@@ -650,6 +651,11 @@ function setupRiskSliders() {
   slippage.addEventListener('input', () => {
     document.getElementById('slippage-label').textContent = slippage.value + ' BP';
   });
+  if (capacity) {
+    capacity.addEventListener('input', () => {
+      document.getElementById('capacity-label').textContent = capacity.value + '%';
+    });
+  }
 }
 
 // ── 表单提交 ─────────────────────────────────────────────────────────────────
@@ -681,6 +687,8 @@ function setupForm() {
       },
       slippage: parseFloat(document.getElementById('slippage').value) / 10000,
       adjust: document.getElementById('adjust-mode').value,
+      enable_capacity_limit: document.getElementById('capacity-enabled')?.checked ?? true,
+      max_volume_participation: parseInt(document.getElementById('capacity-participation')?.value || '10') / 100,
       benchmark: document.getElementById('benchmark-select')?.value || null,
     };
 
