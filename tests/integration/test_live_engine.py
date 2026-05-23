@@ -24,7 +24,7 @@ from cq.core.events import FillEvent, RejectEvent, SignalEvent
 from cq.core.models import Bar, OrderSide, OrderType, Signal, new_signal_id
 from cq.engine.portfolio import PortfolioManager
 from cq.execution.paper import PaperExecutor
-from cq.live import KillSwitch
+from cq.live import KillSwitch, LiveRecoveryStore, OrderIdempotencyStore
 from cq.risk.pre_trade import PreTradeRisk
 from cq.strategy.base import Strategy
 from cq.utils.config import Config, EngineConfig, RiskConfig
@@ -453,3 +453,29 @@ class TestLivePaperTrade:
         assert fills == []
         assert len(rejects) >= 1
         assert "安全层拦截: manual stop" in rejects[0].reason
+
+    def test_paper_trade_persists_recovery_state(self, default_config, price_bars, tmp_path):
+        """LiveEngine 恢复层：paper_trade 运行后应保存 session 状态和幂等 key。"""
+        from cq.live.engine import LiveEngine
+
+        store = self._make_mock_store(price_bars)
+        recovery_store = LiveRecoveryStore(tmp_path)
+        idempotency_store = OrderIdempotencyStore()
+
+        engine = LiveEngine(default_config)
+        engine.configure_safety(idempotency_store=idempotency_store)
+        engine.configure_recovery(
+            recovery_store=recovery_store,
+            session_id="paper-session-1",
+            metadata={"mode": "paper"},
+        )
+        engine.add_strategy(SimpleBuyHoldStrategy(), symbols=[SYMBOL])
+        engine.paper_trade(store=store, start_date=TRADE_DATES[0], end_date=TRADE_DATES[-1])
+
+        state = recovery_store.load("paper-session-1")
+        assert state is not None
+        assert state.status == "stopped"
+        assert len(state.idempotency_keys) >= 1
+        assert state.metadata["mode"] == "paper"
+        assert state.metadata["strategy_id"] == "simple_buy_hold"
+        assert state.metadata["symbols"] == [SYMBOL]

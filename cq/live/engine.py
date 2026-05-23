@@ -40,6 +40,7 @@ from cq.data.feed.historical import HistoricalFeed
 from cq.data.feed.realtime import RealtimeFeed
 from cq.data.store.parquet_store import ParquetStore
 from cq.engine.portfolio import PortfolioManager
+from cq.live.recovery import LiveRecoveryState, LiveRecoveryStore
 from cq.live.safety import DailyLossGuard, KillSwitch, OrderIdempotencyStore
 from cq.risk.pre_trade import PreTradeRisk
 from cq.strategy.base import Strategy, StrategyContext
@@ -97,6 +98,10 @@ class LiveEngine:
         self._idempotency_store: OrderIdempotencyStore | None = None
         self._daily_safety_date: date | None = None
         self._daily_start_assets: float | None = None
+        self._recovery_store: LiveRecoveryStore | None = None
+        self._recovery_session_id: str | None = None
+        self._recovery_metadata: dict[str, object] = {}
+        self._pending_plan_ids: tuple[str, ...] = ()
 
     def add_strategy(self, strategy: Strategy, symbols: list[str]) -> None:
         if not strategy.strategy_id:
@@ -118,6 +123,34 @@ class LiveEngine:
             self._daily_loss_guard = daily_loss_guard
         if idempotency_store is not None:
             self._idempotency_store = idempotency_store
+
+    def configure_recovery(
+        self,
+        *,
+        recovery_store: LiveRecoveryStore,
+        session_id: str,
+        metadata: dict[str, object] | None = None,
+        pending_plan_ids: tuple[str, ...] = (),
+        restore: bool = True,
+    ) -> LiveRecoveryState | None:
+        """Configure restart recovery snapshots and optionally restore prior state."""
+        self._recovery_store = recovery_store
+        self._recovery_session_id = session_id
+        self._recovery_metadata = dict(metadata or {})
+        self._pending_plan_ids = tuple(pending_plan_ids)
+
+        if not restore:
+            return None
+
+        restored = recovery_store.load(session_id)
+        if restored is None:
+            return None
+        if self._idempotency_store is None:
+            self._idempotency_store = OrderIdempotencyStore(keys=set(restored.idempotency_keys))
+        else:
+            for key in restored.idempotency_keys:
+                self._idempotency_store.register(key)
+        return restored
 
     # ── 运行模式 ──────────────────────────────────────────────────────────────────
 
@@ -159,7 +192,14 @@ class LiveEngine:
             f"实盘模式启动  策略={self._strategy.strategy_id}  "
             f"账户={live_cfg.account_id}  标的={self._symbols}"
         )
-        self._run_event_loop(bus, portfolio, executor, feed, ctx, today)
+        self._save_recovery_state("running")
+        try:
+            self._run_event_loop(bus, portfolio, executor, feed, ctx, today)
+        except Exception:
+            self._save_recovery_state("failed")
+            raise
+        else:
+            self._save_recovery_state("stopped")
 
     def paper_trade(
         self,
@@ -199,7 +239,14 @@ class LiveEngine:
             f"纸上交易模式（D+1 撮合）  策略={self._strategy.strategy_id}  "
             f"{start_date}→{end_date}  标的={self._symbols}"
         )
-        self._run_paper_loop(bus, portfolio, risk, executor, matching, ctx, start_date)
+        self._save_recovery_state("running")
+        try:
+            self._run_paper_loop(bus, portfolio, risk, executor, matching, ctx, start_date)
+        except Exception:
+            self._save_recovery_state("failed")
+            raise
+        else:
+            self._save_recovery_state("stopped")
 
     def stop(self) -> None:
         """线程安全地停止引擎。"""
@@ -336,6 +383,7 @@ class LiveEngine:
             logger.debug(
                 f"[{trade_date}] 纸上交易日结束  总资产 {portfolio.get_total_assets():,.0f}"
             )
+            self._save_recovery_state("running")
 
         logger.info(
             f"纸上交易完成  最终资产 {portfolio.get_total_assets():,.0f} 元  "
@@ -407,8 +455,10 @@ class LiveEngine:
         if reason:
             bus.put(RejectEvent(order_id=event.signal.signal_id, reason=reason))
             logger.warning(f"安全层拦截信号 {event.signal.symbol}: {reason}")
+            self._save_recovery_state("running")
             return
         executor.on_signal(event)
+        self._save_recovery_state("running")
 
     def _start_safety_day(self, trade_date: date, portfolio: PortfolioManager) -> None:
         if self._daily_safety_date == trade_date:
@@ -431,6 +481,26 @@ class LiveEngine:
         if not loss_result.passed:
             return f"安全层拦截: {loss_result.reason}"
         return ""
+
+    def _save_recovery_state(self, status: str) -> None:
+        if self._recovery_store is None or self._recovery_session_id is None:
+            return
+        keys: tuple[str, ...] = ()
+        if self._idempotency_store is not None:
+            keys = tuple(sorted(self._idempotency_store.keys()))
+        state = LiveRecoveryState(
+            session_id=self._recovery_session_id,
+            status=status,
+            updated_at=datetime.now(),
+            idempotency_keys=keys,
+            pending_plan_ids=self._pending_plan_ids,
+            metadata={
+                **self._recovery_metadata,
+                "strategy_id": self._strategy.strategy_id if self._strategy else "",
+                "symbols": list(self._symbols),
+            },
+        )
+        self._recovery_store.save(state)
 
     @staticmethod
     def _drain_executor_events(eq: queue.Queue, bus: EventBus) -> None:
