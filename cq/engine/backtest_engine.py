@@ -191,6 +191,8 @@ class BacktestEngine:
         trade_dates = feed.trade_dates
 
         for i, (trade_date, bars) in enumerate(feed.iter_by_date()):
+            matching.start_day(trade_date)
+
             # 步骤 1：更新当日 bar 缓存（撮合引擎需要知道今日价格）
             for bar in bars:
                 matching.on_bar(bar)

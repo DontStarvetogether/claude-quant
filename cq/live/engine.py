@@ -271,6 +271,8 @@ class LiveEngine:
             if trade_date < start_date:
                 continue
 
+            matching.start_day(trade_date)
+
             # 步骤 1：更新撮合引擎的当日 Bar 缓存
             for bar in bars:
                 matching.on_bar(bar)

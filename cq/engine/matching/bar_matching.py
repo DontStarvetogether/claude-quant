@@ -35,8 +35,8 @@ class BarMatchingEngine:
     """
     日线撮合引擎。
 
-    process_pending_orders(today) 必须在 today 的 bar 推送前调用，
-    以确保用 today 的价格撮合 yesterday 的订单（D+1 成交）。
+    每个交易日应先 start_day(today)，再推送 today 的 bar，最后调用
+    process_pending_orders(today)，以确保用 today 的价格撮合 yesterday 的订单（D+1 成交）。
     """
 
     def __init__(
@@ -55,9 +55,18 @@ class BarMatchingEngine:
         self._pending: dict[date, list[Order]] = defaultdict(list)
         # 当日 bar 缓存（每日 bar 推送时更新）
         self._current_bars: dict[str, Bar] = {}
+        self._current_date: date | None = None
+
+    def start_day(self, trade_date: date) -> None:
+        """开始新的交易日，清空上一交易日的 bar 缓存。"""
+        if self._current_date != trade_date:
+            self._current_bars.clear()
+            self._current_date = trade_date
 
     def on_bar(self, bar: Bar) -> None:
         """每日 bar 到达时更新价格缓存。"""
+        if self._current_date != bar.trade_date:
+            self.start_day(bar.trade_date)
         self._current_bars[bar.symbol] = bar
 
     def on_order(self, event: OrderEvent) -> None:
@@ -68,9 +77,12 @@ class BarMatchingEngine:
 
     def process_pending_orders(self, today: date) -> None:
         """
-        在 today 的 bar 推送前调用。
+        在 today 的 bar 推送后调用。
         处理 yesterday（前一交易日）的所有挂单，用 today 的 bar 撮合。
         """
+        if self._current_date != today:
+            self.start_day(today)
+
         try:
             yesterday = self._calendar.prev_trading_day(today)
         except ValueError:
@@ -84,8 +96,8 @@ class BarMatchingEngine:
 
         for order in pending:
             bar = self._current_bars.get(order.symbol)
-            if bar is None:
-                self._reject(order, f"无行情数据: {order.symbol} ({today})")
+            if bar is None or bar.trade_date != today:
+                self._reject(order, f"无当日行情数据: {order.symbol} ({today})")
                 continue
             self._match(order, bar)
 
@@ -156,10 +168,13 @@ class BarMatchingEngine:
             return
 
         # 限价单：委托价高于开盘价，以开盘价成交（对卖方有利）
-        if order.order_type == OrderType.LIMIT and order.limit_price is not None:
-            if order.limit_price > fill_price:
-                self._reject(order, f"限价{order.limit_price:.2f} > 开盘{fill_price:.2f}")
-                return
+        if (
+            order.order_type == OrderType.LIMIT
+            and order.limit_price is not None
+            and order.limit_price > fill_price
+        ):
+            self._reject(order, f"限价{order.limit_price:.2f} > 开盘{fill_price:.2f}")
+            return
 
         # 滑点：卖出方向价格下浮
         fill_price = self._apply_slippage(fill_price, OrderSide.SELL, bar)

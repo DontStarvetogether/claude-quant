@@ -10,15 +10,15 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from cq.core.event_bus import EventBus
-from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, RejectEvent
-from cq.core.models import Bar, OrderSide, PositionSnapshot
+from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, OrderEvent, RejectEvent
+from cq.core.models import Bar, Order, OrderSide, OrderType
 from cq.data.calendar import TradingCalendar
 from cq.engine.matching.bar_matching import BarMatchingEngine
 from cq.engine.portfolio import PortfolioManager
@@ -129,6 +129,7 @@ def run_mini_backtest(strategy: Strategy) -> tuple[dict, list, list]:
     equity = {}
     for trade_date in TRADE_DATES:
         bar = BARS[trade_date]
+        matching.start_day(trade_date)
         matching.on_bar(bar)
         matching.process_pending_orders(trade_date)
         bus.dispatch_all()
@@ -339,6 +340,45 @@ class TestNoLookAheadBias:
         # D+1（1/3）的开盘价是 10.5
         assert buy_fills[0].price == pytest.approx(10.5)
         assert buy_fills[0].trade_date == date(2024, 1, 3)
+
+    def test_pending_order_rejects_when_today_bar_missing_and_old_bar_exists(self):
+        """
+        D+1 缺少当日行情时，撮合引擎不能沿用 D 日缓存的旧 bar 成交。
+        """
+        bus = EventBus()
+        portfolio = PortfolioManager(EngineConfig(initial_capital=100_000))
+        matching = BarMatchingEngine(bus, portfolio, CALENDAR, EngineConfig())
+        fills = []
+        rejects = []
+
+        bus.subscribe(FillEvent, lambda e: fills.append(e.trade))
+        bus.subscribe(RejectEvent, lambda e: rejects.append((e.order_id, e.reason)))
+
+        day1 = date(2024, 1, 2)
+        day2 = date(2024, 1, 3)
+        matching.start_day(day1)
+        matching.on_bar(BARS[day1])
+        matching.on_order(
+            OrderEvent(
+                Order(
+                    order_id="O_STALE_BAR",
+                    signal_id="S_STALE_BAR",
+                    symbol="000001.SZ",
+                    side=OrderSide.BUY,
+                    order_type=OrderType.MARKET,
+                    quantity=100,
+                    limit_price=None,
+                    trade_date=day1,
+                )
+            )
+        )
+
+        # 模拟 Day2 没有该 symbol 的 bar，旧实现会误用 Day1 缓存成交。
+        matching.process_pending_orders(day2)
+        bus.dispatch_all()
+
+        assert fills == []
+        assert rejects == [("O_STALE_BAR", "无当日行情数据: 000001.SZ (2024-01-03)")]
 
 
 class TestFeeCalculation:

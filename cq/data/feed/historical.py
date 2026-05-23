@@ -18,14 +18,16 @@ HistoricalFeed：向引擎推送历史 Bar 数据。
 from __future__ import annotations
 
 from bisect import bisect_right
+from collections.abc import Iterator
 from datetime import date
-from typing import TYPE_CHECKING, Iterator, Optional
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from loguru import logger
 
 from cq.core.models import Bar
 from cq.data.store.parquet_store import ParquetStore
+from cq.utils.trading_rules import AStockRules
 
 if TYPE_CHECKING:
     from cq.data.calendar import TradingCalendar
@@ -45,7 +47,7 @@ class HistoricalFeed:
         symbols: list[str],
         start_date: date,
         end_date: date,
-        calendar: Optional["TradingCalendar"] = None,
+        calendar: TradingCalendar | None = None,
         adjust: str = "qfq",
     ) -> None:
         self._symbols = symbols
@@ -100,7 +102,7 @@ class HistoricalFeed:
         symbols: list[str],
         start_date: date,
         end_date: date,
-        calendar: "TradingCalendar",
+        calendar: TradingCalendar,
     ) -> pd.DataFrame:
         """
         对每只股票按交易日历 reindex，补全停牌缺失行。
@@ -134,9 +136,6 @@ class HistoricalFeed:
             valid_dates = trade_date_index[trade_date_index >= ipo_date]
             if valid_dates.empty:
                 continue
-
-            # 记录原始行数
-            orig_count = len(sym_df)
 
             # reindex：缺失行 = 停牌日
             sym_df = sym_df.reindex(valid_dates)
@@ -284,8 +283,15 @@ class HistoricalFeed:
     def _row_to_bar(row: pd.Series, symbol: str, trade_date: date) -> Bar:
         """将 DataFrame 行转换为 Bar 对象。"""
         is_st = bool(row.get("is_st", False))
-        pct = 0.05 if is_st else 0.10  # ST 股 ±5%，普通股 ±10%
         close = float(row["close"])
+        pre_close = _positive_float_or_default(row.get("pre_close"), close)
+        limit_prices = AStockRules.calc_limit_prices(
+            pre_close=pre_close,
+            is_st=is_st,
+            symbol=symbol,
+        )
+        limit_up = _positive_float_or_default(row.get("limit_up"), limit_prices.limit_up)
+        limit_down = _positive_float_or_default(row.get("limit_down"), limit_prices.limit_down)
         return Bar(
             symbol=symbol,
             trade_date=trade_date if isinstance(trade_date, date) else trade_date.date(),
@@ -295,9 +301,19 @@ class HistoricalFeed:
             close=close,
             volume=int(row["volume"]),
             amount=float(row["amount"]),
-            limit_up=float(row.get("limit_up", round(close * (1 + pct), 2))),
-            limit_down=float(row.get("limit_down", round(close * (1 - pct), 2))),
-            pre_close=float(row.get("pre_close", row["close"])),
+            limit_up=limit_up,
+            limit_down=limit_down,
+            pre_close=pre_close,
             is_st=is_st,
             is_suspended=bool(row.get("is_suspended", False)),
         )
+
+
+def _positive_float_or_default(value: object, default: float) -> float:
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float(default)
+    if pd.isna(parsed) or parsed <= 0:
+        return float(default)
+    return parsed
