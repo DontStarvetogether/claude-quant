@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd
@@ -73,15 +73,7 @@ class LiquidUniverseProvider:
         normalized = _normalize_universe_id(universe_id)
         if normalized != self._universe_id:
             raise UniverseNotFoundError(f"unknown universe: {universe_id}")
-        return Universe(
-            id=self._universe_id,
-            name="全A流动性池",
-            source="derived_from_bars",
-            construction="dynamic_liquidity",
-            description="按交易日从日线数据动态筛选的全A可交易流动性股票池。",
-            symbols=(),
-            metadata={"rules": asdict(self._config)},
-        )
+        return _build_liquid_universe(self._universe_id, self._config)
 
     def get_symbols(self, universe_id: str, trade_date: date | None = None) -> list[str]:
         self.get_universe(universe_id)
@@ -91,6 +83,66 @@ class LiquidUniverseProvider:
 
     def select(self, trade_date: date) -> LiquidUniverseSelection:
         return select_all_a_liquid_universe(self._bars, trade_date, self._config)
+
+
+class StoreBackedLiquidUniverseProvider:
+    """Resolve ALL_A_LIQUID from a local data store."""
+
+    def __init__(
+        self,
+        store: Any,
+        config: LiquidUniverseConfig | None = None,
+        *,
+        candidate_symbols: list[str] | None = None,
+        adjust: str = "qfq",
+        history_calendar_days: int | None = None,
+        universe_id: str = ALL_A_LIQUID_ID,
+    ) -> None:
+        self._store = store
+        self._config = config or LiquidUniverseConfig()
+        self._candidate_symbols = [symbol.upper() for symbol in candidate_symbols] if candidate_symbols else None
+        self._adjust = adjust
+        self._history_calendar_days = history_calendar_days or _default_history_calendar_days(
+            self._config
+        )
+        self._universe_id = _normalize_universe_id(universe_id)
+
+    def list_universes(self) -> list[Universe]:
+        return [self.get_universe(self._universe_id)]
+
+    def get_universe(self, universe_id: str) -> Universe:
+        normalized = _normalize_universe_id(universe_id)
+        if normalized != self._universe_id:
+            raise UniverseNotFoundError(f"unknown universe: {universe_id}")
+        return _build_liquid_universe(self._universe_id, self._config)
+
+    def get_symbols(self, universe_id: str, trade_date: date | None = None) -> list[str]:
+        return list(self.select_for_universe(universe_id, trade_date).symbols)
+
+    def select_for_universe(
+        self, universe_id: str, trade_date: date | None = None
+    ) -> LiquidUniverseSelection:
+        self.get_universe(universe_id)
+        if trade_date is None:
+            raise ValueError("trade_date is required for dynamic liquidity universe")
+        return self.select(trade_date)
+
+    def select(self, trade_date: date | str | pd.Timestamp) -> LiquidUniverseSelection:
+        target_date = _to_date(trade_date)
+        symbols = self._resolve_candidate_symbols()
+        if not symbols:
+            return select_all_a_liquid_universe(pd.DataFrame(), target_date, self._config)
+
+        start_date = target_date - timedelta(days=self._history_calendar_days)
+        bars = self._store.read_bars_batch(symbols, start_date, target_date, self._adjust)
+        return select_all_a_liquid_universe(bars, target_date, self._config)
+
+    def _resolve_candidate_symbols(self) -> list[str]:
+        if self._candidate_symbols is not None:
+            return list(self._candidate_symbols)
+        if not hasattr(self._store, "list_symbols"):
+            raise ValueError("candidate_symbols is required when store has no list_symbols()")
+        return list(self._store.list_symbols(self._adjust))
 
 
 def build_all_a_liquid_universe(
@@ -244,6 +296,23 @@ def select_all_a_liquid_universe(
 
 def _normalize_universe_id(universe_id: str) -> str:
     return universe_id.removeprefix("preset_").lower()
+
+
+def _build_liquid_universe(universe_id: str, config: LiquidUniverseConfig) -> Universe:
+    return Universe(
+        id=universe_id,
+        name="全A流动性池",
+        source="derived_from_bars",
+        construction="dynamic_liquidity",
+        description="按交易日从日线数据动态筛选的全A可交易流动性股票池。",
+        symbols=(),
+        metadata={"rules": asdict(config)},
+    )
+
+
+def _default_history_calendar_days(config: LiquidUniverseConfig) -> int:
+    required_trading_days = max(config.min_listing_days, config.lookback_days)
+    return max(365, required_trading_days * 3)
 
 
 def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:

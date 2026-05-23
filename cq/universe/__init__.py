@@ -6,6 +6,7 @@ from cq.universe.liquid import (
     LiquidUniverseConfig,
     LiquidUniverseProvider,
     LiquidUniverseSelection,
+    StoreBackedLiquidUniverseProvider,
     build_all_a_liquid_universe,
     select_all_a_liquid_universe,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "LiquidUniverseConfig",
     "LiquidUniverseProvider",
     "LiquidUniverseSelection",
+    "StoreBackedLiquidUniverseProvider",
     "StaticUniverseProvider",
     "Universe",
     "UniverseNotFoundError",

@@ -5,9 +5,11 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
+from cq.data.store.parquet_store import ParquetStore
 from cq.universe import (
     LiquidUniverseConfig,
     LiquidUniverseProvider,
+    StoreBackedLiquidUniverseProvider,
     UniverseNotFoundError,
     build_all_a_liquid_universe,
     select_all_a_liquid_universe,
@@ -128,3 +130,47 @@ def test_liquid_universe_rejects_missing_required_columns():
 
     with pytest.raises(ValueError, match="close"):
         build_all_a_liquid_universe(bars, date(2024, 1, 2))
+
+
+def test_store_backed_liquid_universe_provider_reads_local_parquet_store(tmp_path):
+    dates = [date(2024, 1, 2) + timedelta(days=i) for i in range(5)]
+    store = ParquetStore(tmp_path)
+    for symbol, amount in {"GOOD.SH": 100_000_000.0, "LOW.SH": 10_000_000.0}.items():
+        bars = pd.DataFrame(_make_rows(symbol, dates, amount=amount)).drop(columns=["symbol"])
+        store.write_daily_bars(symbol, bars, adjust="qfq", mode="overwrite")
+
+    assert store.list_symbols("qfq") == ["GOOD.SH", "LOW.SH"]
+
+    provider = StoreBackedLiquidUniverseProvider(
+        store,
+        LiquidUniverseConfig(
+            lookback_days=3,
+            min_listing_days=3,
+            min_avg_amount=50_000_000.0,
+        ),
+    )
+
+    selection = provider.select(dates[-1])
+
+    assert provider.get_symbols("all_a_liquid", dates[-1]) == ["GOOD.SH"]
+    assert selection.diagnostics.set_index("symbol").loc["LOW.SH", "reason"] == "low_avg_amount"
+
+
+def test_store_backed_liquid_universe_provider_accepts_explicit_candidates(tmp_path):
+    dates = [date(2024, 1, 2) + timedelta(days=i) for i in range(4)]
+    store = ParquetStore(tmp_path)
+    for symbol in ["KEEP.SH", "DROP.SH"]:
+        bars = pd.DataFrame(_make_rows(symbol, dates)).drop(columns=["symbol"])
+        store.write_daily_bars(symbol, bars, adjust="qfq", mode="overwrite")
+
+    provider = StoreBackedLiquidUniverseProvider(
+        store,
+        LiquidUniverseConfig(
+            lookback_days=2,
+            min_listing_days=2,
+            min_avg_amount=50_000_000.0,
+        ),
+        candidate_symbols=["KEEP.SH"],
+    )
+
+    assert provider.get_symbols("preset_all_a_liquid", dates[-1]) == ["KEEP.SH"]

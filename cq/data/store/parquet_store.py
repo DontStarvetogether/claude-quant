@@ -11,15 +11,12 @@ Parquet 本地存储。
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 from loguru import logger
 
 # Schema 版本，读取时校验
@@ -98,8 +95,8 @@ class ParquetStore:
     def read_daily_bars(
         self,
         symbol: str,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         adjust: str = "qfq",
     ) -> pd.DataFrame:
         """读取日线数据，可指定日期范围（pyarrow predicate pushdown）。"""
@@ -115,8 +112,8 @@ class ParquetStore:
     def read_bars_batch(
         self,
         symbols: list[str],
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         adjust: str = "qfq",
     ) -> pd.DataFrame:
         """批量读取多只股票的日线数据，返回含 symbol 列的合并 DataFrame。"""
@@ -138,7 +135,7 @@ class ParquetStore:
 
     def get_available_dates(
         self, symbol: str, adjust: str = "raw"
-    ) -> tuple[Optional[date], Optional[date]]:
+    ) -> tuple[date | None, date | None]:
         """返回本地数据的 (最早日期, 最新日期)，无数据返回 (None, None)。"""
         path = self._bar_path(symbol, adjust)
         if not path.exists():
@@ -220,7 +217,7 @@ class ParquetStore:
 
     @staticmethod
     def _date_filters(
-        start_date: Optional[date], end_date: Optional[date]
+        start_date: date | None, end_date: date | None
     ) -> list[tuple]:
         filters = []
         if start_date:
@@ -231,3 +228,19 @@ class ParquetStore:
 
     def symbol_exists(self, symbol: str, adjust: str = "qfq") -> bool:
         return self._bar_path(symbol, adjust).exists()
+
+    def list_symbols(self, adjust: str = "qfq") -> list[str]:
+        """List symbols that have local daily bar files for the requested adjustment."""
+        bars_root = self._root / "bars"
+        if not bars_root.exists():
+            return []
+
+        symbols: list[str] = []
+        for exchange_dir in bars_root.iterdir():
+            if not exchange_dir.is_dir():
+                continue
+            exchange = exchange_dir.name.upper()
+            for code_dir in exchange_dir.iterdir():
+                if code_dir.is_dir() and (code_dir / f"{adjust}.parquet").exists():
+                    symbols.append(f"{code_dir.name}.{exchange}")
+        return sorted(symbols)
