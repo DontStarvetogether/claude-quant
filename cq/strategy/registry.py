@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 from typing import Any
 
 from cq.strategy.base import Strategy
@@ -83,14 +84,67 @@ def get_strategy_list() -> list[dict]:
     return [{"id": sid, **meta} for sid, meta in STRATEGY_METADATA.items()]
 
 
+def _coerce_param_value(strategy_id: str, meta: dict[str, Any], value: Any) -> Any:
+    name = meta["name"]
+    param_type = meta.get("type")
+
+    try:
+        if param_type == "int":
+            if isinstance(value, bool):
+                raise ValueError
+            number = float(value)
+            if not math.isfinite(number) or not number.is_integer():
+                raise ValueError
+            coerced: Any = int(number)
+        elif param_type == "float":
+            if isinstance(value, bool):
+                raise ValueError
+            coerced = float(value)
+            if not math.isfinite(coerced):
+                raise ValueError
+        elif param_type == "bool":
+            if isinstance(value, bool):
+                coerced = value
+            elif isinstance(value, str):
+                text = value.strip().lower()
+                if text in ("true", "1", "yes", "y", "on"):
+                    coerced = True
+                elif text in ("false", "0", "no", "n", "off"):
+                    coerced = False
+                else:
+                    raise ValueError
+            elif isinstance(value, (int, float)) and value in (0, 1):
+                coerced = bool(value)
+            else:
+                raise ValueError
+        else:
+            coerced = value
+    except (TypeError, ValueError):
+        raise ValueError(f"策略 {strategy_id} 参数 {name} 类型应为 {param_type}") from None
+
+    if param_type in ("int", "float"):
+        min_value = meta.get("min")
+        max_value = meta.get("max")
+        if min_value is not None and coerced < min_value:
+            raise ValueError(f"策略 {strategy_id} 参数 {name} 不能小于 {min_value}")
+        if max_value is not None and coerced > max_value:
+            raise ValueError(f"策略 {strategy_id} 参数 {name} 不能大于 {max_value}")
+
+    return coerced
+
+
 def validate_strategy_params(strategy_id: str, params: dict[str, Any]) -> dict[str, Any]:
     if strategy_id not in STRATEGY_METADATA:
         raise ValueError(f"未知策略: {strategy_id}")
-    allowed = {p["name"] for p in STRATEGY_METADATA[strategy_id]["params"]}
+    param_meta = {p["name"]: p for p in STRATEGY_METADATA[strategy_id]["params"]}
+    allowed = set(param_meta)
     unknown = sorted(set(params) - allowed)
     if unknown:
         raise ValueError(f"策略 {strategy_id} 不支持参数: {', '.join(unknown)}")
-    return dict(params)
+    return {
+        name: _coerce_param_value(strategy_id, param_meta[name], value)
+        for name, value in params.items()
+    }
 
 
 def load_strategy(strategy_id: str, params: dict[str, Any] | None = None) -> Strategy:

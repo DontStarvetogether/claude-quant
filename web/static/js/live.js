@@ -188,12 +188,14 @@ function renderStrategyParams() {
 function getStrategyParams() {
   const params = {};
   document.querySelectorAll('#params-container input[data-param]').forEach(el => {
-    if (el.dataset.type === 'bool') {
-      params[el.dataset.param] = el.checked;
+    const name = el.dataset.param;
+    const type = el.dataset.type;
+    if (type === 'bool') {
+      params[name] = el.checked;
       return;
     }
-    const v = parseFloat(el.value);
-    if (!isNaN(v)) params[el.dataset.param] = v;
+    const v = type === 'int' ? parseInt(el.value, 10) : parseFloat(el.value);
+    if (!Number.isNaN(v)) params[name] = v;
   });
   return params;
 }

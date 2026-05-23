@@ -495,6 +495,10 @@ class _DummyRecord:
         self._session = session
 
     @property
+    def run_id(self):
+        return self._session.session_id
+
+    @property
     def current_date(self):
         return self._session.current_date
 

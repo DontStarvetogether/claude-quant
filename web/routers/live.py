@@ -9,6 +9,7 @@ from typing import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from cq.strategy.registry import validate_strategy_params
 from web.live_runner import live_store, start_paper_session, start_live_session, stop_session
 from web import db
 from web.schemas import (
@@ -25,6 +26,11 @@ router = APIRouter(prefix="/api/live", tags=["live"])
 @router.post("/start", response_model=LiveStartResponse, status_code=202)
 async def start_live(req: LiveStartRequest) -> LiveStartResponse:
     """启动模拟盘或实盘会话。"""
+    try:
+        strategy_params = validate_strategy_params(req.strategy_id, req.strategy_params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
     if req.mode == "live":
         # 实盘模式
         if not req.account_id:
@@ -33,7 +39,7 @@ async def start_live(req: LiveStartRequest) -> LiveStartResponse:
             strategy_id=req.strategy_id,
             symbols=req.symbols,
             initial_capital=req.initial_capital,
-            strategy_params=req.strategy_params,
+            strategy_params=strategy_params,
             risk_params=req.risk.model_dump(),
             account_id=req.account_id,
             mini_qmt_dir=req.mini_qmt_dir,
@@ -48,7 +54,7 @@ async def start_live(req: LiveStartRequest) -> LiveStartResponse:
             start_date=req.start_date,
             end_date=req.end_date,
             initial_capital=req.initial_capital,
-            strategy_params=req.strategy_params,
+            strategy_params=strategy_params,
             risk_params=req.risk.model_dump(),
         )
     return LiveStartResponse(session_id=session.session_id, status="starting")

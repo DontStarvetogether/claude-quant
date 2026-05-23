@@ -9,6 +9,7 @@ from typing import AsyncIterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from cq.strategy.registry import validate_strategy_params
 from web.runner import submit_backtest
 from web.schemas import (
     BacktestRequest,
@@ -27,6 +28,11 @@ router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 @router.post("/run", response_model=BacktestSubmitResponse, status_code=202)
 async def run_backtest(req: BacktestRequest) -> BacktestSubmitResponse:
     """提交回测任务，立即返回 run_id。"""
+    try:
+        strategy_params = validate_strategy_params(req.strategy_id, req.strategy_params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
     record = run_store.create(
         strategy_name=req.strategy_id,
         symbols=req.symbols,
@@ -44,7 +50,7 @@ async def run_backtest(req: BacktestRequest) -> BacktestSubmitResponse:
         start_date=req.start_date,
         end_date=req.end_date,
         initial_capital=req.initial_capital,
-        strategy_params=req.strategy_params,
+        strategy_params=strategy_params,
         risk_params=req.risk.model_dump(),
         slippage=req.slippage,
         adjust=req.adjust,
