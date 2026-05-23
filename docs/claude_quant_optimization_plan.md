@@ -9,8 +9,8 @@
 
 | 模块 | 状态 | 证据 / 备注 |
 |---|---|---|
-| Phase 0 项目基线整理 | 已完成初版 | Python 已锁定 `>=3.11,<3.13`；新增 GitHub Actions 跑 `tests/unit`；`pandas-ta` 已移入可选依赖；新增 `docs/dev_guide.md`；`.gitignore` 已覆盖常见产物 |
-| Phase 1.1 T+1 卖出语义 | 已完成初版 | `PreTradeRisk` 信号日按 `total_qty` 允许生成次日卖单，撮合日再由 `BarMatchingEngine` 按 `tradeable_qty` 最终检查；已有集成测试覆盖 D+1 买入后 D+2 可卖 |
+| Phase 0 项目基线整理 | 已完成初版 | Python 已锁定 `>=3.11,<3.13`；GitHub Actions 已跑 `tests/unit tests/integration`；`pandas-ta` 已移入可选依赖；新增 `docs/dev_guide.md`；`.gitignore` 已覆盖常见产物 |
+| Phase 1.1 T+1 卖出语义 | 已完成初版 | `PreTradeRisk` 信号日按 `total_qty` 允许生成次日卖单，撮合日再由 `BarMatchingEngine` 按 `tradeable_qty` 最终检查；已有集成测试覆盖 D+1 买入后 D+2 可卖，并纳入 CI |
 | Phase 1.2 A 股涨跌停规则 | 已完成初版 | 已集中到 `cq/utils/trading_rules.py::AStockRules`，覆盖主板、ST、创业板、科创板、北交所；已有 `tests/unit/test_trading_rules.py` |
 | Phase 1.3 成交拒单诊断 | 已完成初版 | 回测结果已输出 `execution_diagnostics`，结果页展示拒单分类、成交比例、容量限制等 |
 | Phase 2.1 换手率指标 | 已完成初版 | `PerformanceMetrics` 已输出日均/年化/最大/买入/卖出换手率，结果页已展示 |
