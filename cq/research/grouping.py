@@ -104,6 +104,9 @@ def _assign_groups(
     date_col: str,
     factor_col: str,
 ) -> pd.Series:
+    if data.empty:
+        return pd.Series(index=data.index, dtype="float64")
+
     def assign_one_date(group: pd.DataFrame) -> pd.Series:
         valid = group[factor_col].dropna()
         result = pd.Series(np.nan, index=group.index, dtype="float64")
