@@ -20,7 +20,7 @@
 | Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记 |
 | Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告 |
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
-| Phase 5 股票池体系升级 | 进行中 | 已有静态预设 `web/universe_registry.py`；未形成 `UniverseProvider`，无 PIT 成分股/ALL_A_LIQUID |
+| Phase 5 股票池体系升级 | 进行中 | 已新增 `cq/universe` 与 `StaticUniverseProvider`，Web 预设已改为从核心包读取；PIT 成分股/ALL_A_LIQUID 待做 |
 | Phase 6 平台交叉验证 | 未开始 | 需要先建立 benchmark 与导出格式 |
 | Phase 7 模拟盘 / 实盘安全层 | 进行中 | 模拟盘已有会话持久化和历史查看；实盘安全层仍缺订单幂等、重启恢复、交易计划确认、日报/报警 |
 
@@ -34,8 +34,8 @@
    - 后续重点转向 benchmark 数据接入脚本，以及和聚宽/米筐/QMT 模拟盘交叉验证
 
 2. **Phase 5 补股票池抽象**
-   - 在现有静态预设基础上补 `UniverseProvider`
-   - 第一版先服务 benchmark 和因子研究，不急着做 PIT 成分股
+   - 第一版 `UniverseProvider` 已完成，静态预设已从 Web 层下沉到核心包
+   - 下一步补 `ALL_A_LIQUID` 规则雏形，暂不急着做 PIT 成分股
 
 3. **Phase 3 后续增强**
    - 为研究模块增加 CSV/JSON 导出

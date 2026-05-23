@@ -14,6 +14,7 @@ def test_universe_presets_have_required_metadata():
         assert item["source"] == "builtin_preset"
         assert item["construction"] == "static"
         assert item["symbols"]
+        assert "metadata" in item
 
 
 def test_universe_presets_return_copied_symbol_lists():
