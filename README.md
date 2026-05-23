@@ -35,9 +35,14 @@ scripts/                CLI 工具
 
 ## 快速开始
 
+需要 Python `3.11` 或 `3.12`。
+
 ```bash
 # 安装依赖
 pip install -e ".[dev]"
+
+# 如果要在自定义策略里使用 pandas-ta 技术指标
+pip install -e ".[dev,indicators]"
 
 # 配置（复制模板，填入 token）
 cp config/default.yaml config/local.yaml
@@ -132,4 +137,4 @@ A 股标准：当日买入的股票，**次日**才可卖出。
 | `baostock` | 免费 A 股数据源 |
 | `tushare` | 付费 A 股数据源（可选）|
 | `pytest` + `hypothesis` | 测试 |
-| `pandas-ta` | 技术指标（替代手写实现）|
+| `pandas-ta` | 技术指标（可选，安装 `.[indicators]`）|

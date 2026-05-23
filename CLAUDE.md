@@ -50,7 +50,6 @@ run_web.py  启动入口
 - Web 模拟盘：live.html 监控页 + /api/live（start/stop/status/stream/sessions），SSE 实时推送持仓和成交
 
 ## 缺失模块（待实现）
-- P0 项目基线：GitHub Actions CI、Python 版本上限、开发说明
 - P1 研究能力：`cq/research` 单因子分层、Forward Return、Rank IC、Markdown 因子报告
 - P1 Benchmark：标准 20 日动量 Top20、动量缓冲区、每日持仓/成交导出
 - P1 股票池：UniverseProvider、ALL_A_LIQUID、PIT 历史成分股

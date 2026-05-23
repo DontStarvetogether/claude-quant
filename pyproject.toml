@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "claude-quant"
 version = "0.1.0"
 description = "A股量化交易框架，以生产实盘为最终目标设计"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "pandas>=2.1",
     "pyarrow>=14.0",
@@ -16,7 +16,6 @@ dependencies = [
     "loguru>=0.7",
     "akshare>=1.14.0",
     "baostock>=0.8.8",
-    "pandas-ta>=0.3.14b",
     "python-dotenv>=1.0",
     "click>=8.1",
     "rich>=13.0",
@@ -28,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tushare = ["tushare>=1.4"]
+indicators = ["pandas-ta>=0.3.14b"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",

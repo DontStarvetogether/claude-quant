@@ -9,7 +9,7 @@
 
 | 模块 | 状态 | 证据 / 备注 |
 |---|---|---|
-| Phase 0 项目基线整理 | 进行中 | `pyproject.toml` 已有 runtime/dev 依赖和 `>=3.11`，`.gitignore` 已覆盖常见产物；仍缺 CI，Python 上限未锁到 `<3.13`，开发说明未补齐 |
+| Phase 0 项目基线整理 | 已完成初版 | Python 已锁定 `>=3.11,<3.13`；新增 GitHub Actions 跑 `tests/unit`；`pandas-ta` 已移入可选依赖；新增 `docs/dev_guide.md`；`.gitignore` 已覆盖常见产物 |
 | Phase 1.1 T+1 卖出语义 | 已完成初版 | `PreTradeRisk` 信号日按 `total_qty` 允许生成次日卖单，撮合日再由 `BarMatchingEngine` 按 `tradeable_qty` 最终检查；已有集成测试覆盖 D+1 买入后 D+2 可卖 |
 | Phase 1.2 A 股涨跌停规则 | 已完成初版 | 已集中到 `cq/utils/trading_rules.py::AStockRules`，覆盖主板、ST、创业板、科创板、北交所；已有 `tests/unit/test_trading_rules.py` |
 | Phase 1.3 成交拒单诊断 | 已完成初版 | 回测结果已输出 `execution_diagnostics`，结果页展示拒单分类、成交比例、容量限制等 |
@@ -27,20 +27,19 @@
 
 当前建议不要继续堆 UI 细节，优先进入“研究能力 + 可回归验证”：
 
-1. **Phase 0 收尾：增加 GitHub Actions CI**
-   - 锁定 Python 测试矩阵 `3.11 / 3.12`
-   - push 自动跑 `pytest tests/unit`
-   - 顺手把 `requires-python` 改为 `>=3.11,<3.13`
-
-2. **Phase 3 开工：新增 `cq/research` 单因子研究骨架**
+1. **Phase 3 开工：新增 `cq/research` 单因子研究骨架**
    - `forward_return.py`：按 symbol 计算 1/5/20 日未来收益
    - `ic.py`：Rank IC / ICIR / IC 胜率
    - `grouping.py`：分层收益、Top-Bottom、覆盖率
    - 配套 unit tests，先不做 Web 页面
 
-3. **Phase 4 开工：建立第一个可回归 Benchmark**
+2. **Phase 4 开工：建立第一个可回归 Benchmark**
    - 先做 `20日动量 Top20`，输出每日净值、持仓、成交
    - 后续用于和聚宽/米筐/QMT 模拟盘交叉验证
+
+3. **Phase 5 补股票池抽象**
+   - 在现有静态预设基础上补 `UniverseProvider`
+   - 第一版先服务 benchmark 和因子研究，不急着做 PIT 成分股
 
 ## 进度更新约定
 
