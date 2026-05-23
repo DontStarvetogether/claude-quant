@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import pytest
 
 from cq.research import (
     analyze_factor_groups,
     calculate_ic,
+    export_factor_report,
     generate_factor_report,
     summarize_ic,
 )
@@ -82,3 +85,52 @@ def test_generate_factor_report_validates_required_columns():
             analysis=analysis,
             ic_summary=pd.DataFrame(columns=["period"]),
         )
+
+
+def test_export_factor_report_writes_tables_summary_and_markdown(tmp_path):
+    factor_return = pd.DataFrame(
+        {
+            "date": ["2024-01-01"] * 5 + ["2024-01-02"] * 5,
+            "symbol": ["A", "B", "C", "D", "E"] * 2,
+            "factor": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+            "forward_return_1d": [0.01, 0.02, 0.03, 0.04, 0.05, 0.02, 0.03, 0.04, 0.05, 0.06],
+        }
+    )
+    analysis = analyze_factor_groups(factor_return, group_count=5, periods=[1])
+    ic_summary = summarize_ic(calculate_ic(factor_return, periods=[1]))
+
+    exported = export_factor_report(
+        factor_name="20日动量",
+        universe="HS300_STATIC",
+        start_date="2024-01-01",
+        end_date="2024-01-02",
+        metadata={"rebalance": "D"},
+        analysis=analysis,
+        ic_summary=ic_summary,
+        output_dir=tmp_path,
+    )
+
+    expected = {
+        "coverage",
+        "ic_summary",
+        "group_return",
+        "group_nav",
+        "top_bottom_return",
+        "monotonicity",
+        "turnover_by_group",
+        "summary",
+        "report",
+    }
+    assert set(exported.files) == expected
+    for path in exported.files.values():
+        assert path.exists()
+
+    payload = json.loads(exported.files["summary"].read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "factor_report.v1"
+    assert payload["factor_name"] == "20日动量"
+    assert payload["universe"] == "HS300_STATIC"
+    assert payload["metadata"] == {"rebalance": "D"}
+    assert payload["files"]["coverage"] == "coverage.csv"
+    assert payload["table_rows"]["ic_summary"] == len(ic_summary)
+    assert pd.read_csv(exported.files["coverage"])["coverage"].iloc[0] == 1.0
+    assert exported.files["report"].read_text(encoding="utf-8").startswith("# 因子报告")

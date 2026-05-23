@@ -18,7 +18,7 @@
 | Phase 2.2 成本前后收益 | 已完成初版 | 已输出 `gross_return/net_return/gross_annual_return/net_annual_return/cost_drag/cost_to_nav` 等 |
 | Phase 2.3 组合暴露指标 | 已完成初版 | 已输出平均持仓数、现金占比、最大单票、Top5 集中度；行业/市值暴露未做 |
 | Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记 |
-| Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告 |
+| Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告，并支持 CSV/JSON/Markdown 标准导出 |
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
 | Phase 5 股票池体系升级 | 进行中 | 已新增 `cq/universe`、`StaticUniverseProvider`、`LiquidUniverseProvider` 和 `StoreBackedLiquidUniverseProvider`；`ALL_A_LIQUID` 已可从 `ParquetStore` 本地 bars 动态筛选；PIT 成分股待做 |
 | Phase 6 平台交叉验证 | 已完成初版 | 已新增 `cq/benchmark/cross_validation.py` 和 `docs/cross_validation_report.md`；可比较每日净值、持仓、成交并导出差异报告；真实外部平台样本对账待执行 |
@@ -40,8 +40,8 @@
    - 下一步做 PIT 指数成分股，或先建立平台交叉验证模板
 
 3. **Phase 3 后续增强**
-   - 为研究模块增加 CSV/JSON 导出
-   - 接入 Web 页面前先用 benchmark 结果验证口径
+   - CSV/JSON/Markdown 导出已完成初版
+   - 接入 Web 页面前先用 benchmark 和交叉验证结果继续验证口径
 
 ## 进度更新约定
 
@@ -563,7 +563,20 @@ Top-Bottom 收益
 - CSV
 - JSON
 
-第一版优先 Markdown。
+第一版已支持 Markdown、CSV、JSON：
+
+```text
+export_factor_report()
+coverage.csv
+ic_summary.csv
+group_return.csv
+group_nav.csv
+top_bottom_return.csv
+monotonicity.csv
+turnover_by_group.csv
+summary.json
+report.md
+```
 
 ---
 

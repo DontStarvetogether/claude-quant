@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -11,12 +13,23 @@ import pandas as pd
 
 from cq.research.grouping import FactorGroupAnalysis
 
+SCHEMA_VERSION = "factor_report.v1"
+
 
 @dataclass(frozen=True)
 class FactorReport:
     """Rendered factor report."""
 
     markdown: str
+
+
+@dataclass(frozen=True)
+class FactorReportExport:
+    """Paths written by factor report export."""
+
+    output_dir: Path
+    files: dict[str, Path]
+    report: FactorReport
 
 
 def generate_factor_report(
@@ -43,6 +56,66 @@ def generate_factor_report(
     lines.extend(_turnover_section(analysis.turnover_by_group))
 
     return FactorReport(markdown="\n".join(lines).rstrip() + "\n")
+
+
+def export_factor_report(
+    *,
+    factor_name: str,
+    analysis: FactorGroupAnalysis,
+    ic_summary: pd.DataFrame,
+    output_dir: str | Path,
+    universe: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    date_col: str = "date",
+    include_markdown: bool = True,
+) -> FactorReportExport:
+    """Export factor research tables, summary JSON, and optional Markdown."""
+    report = generate_factor_report(
+        factor_name=factor_name,
+        analysis=analysis,
+        ic_summary=ic_summary,
+        universe=universe,
+        start_date=start_date,
+        end_date=end_date,
+        metadata=metadata,
+        date_col=date_col,
+    )
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    files: dict[str, Path] = {}
+    tables = _analysis_tables(analysis, ic_summary)
+    for key, frame in tables.items():
+        path = out / f"{key}.csv"
+        _frame_for_export(frame).to_csv(path, index=False)
+        files[key] = path
+
+    summary_payload = {
+        "schema_version": SCHEMA_VERSION,
+        "factor_name": factor_name,
+        "universe": universe,
+        "start_date": start_date,
+        "end_date": end_date,
+        "metadata": dict(metadata or {}),
+        "table_rows": {key: int(len(frame)) for key, frame in tables.items()},
+        "ic_summary": _json_records(ic_summary),
+        "files": {key: path.name for key, path in files.items()},
+    }
+    summary_path = out / "summary.json"
+    summary_path.write_text(
+        json.dumps(_json_safe(summary_payload), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    files["summary"] = summary_path
+
+    if include_markdown:
+        report_path = out / "report.md"
+        report_path.write_text(report.markdown, encoding="utf-8")
+        files["report"] = report_path
+
+    return FactorReportExport(output_dir=out, files=files, report=report)
 
 
 def _scope_section(
@@ -246,3 +319,38 @@ def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:
     missing = [c for c in columns if c not in df.columns]
     if missing:
         raise ValueError(f"missing required columns: {', '.join(missing)}")
+
+
+def _analysis_tables(
+    analysis: FactorGroupAnalysis,
+    ic_summary: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    return {
+        "coverage": analysis.coverage,
+        "ic_summary": ic_summary,
+        "group_return": analysis.group_return,
+        "group_nav": analysis.group_nav,
+        "top_bottom_return": analysis.top_bottom_return,
+        "monotonicity": analysis.monotonicity,
+        "turnover_by_group": analysis.turnover_by_group,
+    }
+
+
+def _frame_for_export(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.copy().reset_index(drop=True)
+
+
+def _json_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    return [_json_safe(row) for row in frame.to_dict("records")]
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if hasattr(value, "item"):
+        return value.item()
+    return value
