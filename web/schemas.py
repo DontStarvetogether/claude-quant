@@ -32,6 +32,21 @@ class StrategiesResponse(BaseModel):
     strategies: list[StrategyInfo]
 
 
+# ── 股票池 ───────────────────────────────────────────────────────────────────
+
+
+class UniverseInfo(BaseModel):
+    id: str
+    name: str
+    source: str = "builtin_preset"
+    construction: str = "static"
+    symbols: list[str]
+
+
+class UniversesResponse(BaseModel):
+    universes: list[UniverseInfo]
+
+
 # ── 回测请求 ─────────────────────────────────────────────────────────────────
 
 

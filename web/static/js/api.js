@@ -9,6 +9,12 @@ const API = {
     return res.json();
   },
 
+  async getUniverses() {
+    const res = await fetch('/api/universes');
+    if (!res.ok) throw new Error('获取股票池预设失败');
+    return res.json();
+  },
+
   async runBacktest(payload) {
     const res = await fetch('/api/backtest/run', {
       method: 'POST',

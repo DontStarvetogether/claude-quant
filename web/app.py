@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from web.routers import backtest, data, live, strategy, symbols
+from web.routers import backtest, data, live, strategy, symbols, universe
 from web.data_update_service import DataUpdateService
 from cq.utils.config import Config
 
@@ -26,6 +26,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(strategy.router)
+app.include_router(universe.router)
 app.include_router(backtest.router)
 app.include_router(symbols.router)
 app.include_router(data.router)
