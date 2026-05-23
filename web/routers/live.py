@@ -13,6 +13,8 @@ from fastapi.responses import StreamingResponse
 from cq.strategy.registry import validate_strategy_params
 from web import db
 from web.live_runner import (
+    list_daily_report_snapshots,
+    list_recovery_snapshots,
     live_store,
     load_daily_report_snapshot,
     load_recovery_snapshot,
@@ -216,6 +218,18 @@ async def list_sessions() -> LiveSessionsResponse:
                 started_at=d["started_at"],
             ))
     return LiveSessionsResponse(sessions=sessions)
+
+
+@router.get("/recovery")
+async def list_recovery() -> dict:
+    """列出所有恢复状态快照。"""
+    return {"states": list_recovery_snapshots()}
+
+
+@router.get("/daily-reports")
+async def list_daily_reports() -> dict:
+    """列出所有每日交易日报摘要。"""
+    return {"reports": list_daily_report_snapshots()}
 
 
 @router.get("/{session_id}/trades")

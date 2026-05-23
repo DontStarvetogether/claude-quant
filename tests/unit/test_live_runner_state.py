@@ -12,6 +12,8 @@ from web.live_runner import (
     LiveSession,
     _configure_engine_state,
     _export_session_daily_report,
+    list_daily_report_snapshots,
+    list_recovery_snapshots,
     load_daily_report_snapshot,
     load_recovery_snapshot,
 )
@@ -58,6 +60,9 @@ def test_configure_engine_state_wires_idempotency_and_recovery(tmp_path):
     assert snapshot is not None
     assert snapshot["session_id"] == "session-1"
     assert snapshot["idempotency_keys"] == ["intent-key"]
+
+    states = list_recovery_snapshots(str(config_path))
+    assert [state["session_id"] for state in states] == ["session-1"]
 
 
 def test_export_session_daily_report_writes_report_files(tmp_path, monkeypatch):
@@ -122,3 +127,7 @@ def test_export_session_daily_report_writes_report_files(tmp_path, monkeypatch):
     assert snapshot is not None
     assert snapshot["summary"]["session_id"] == "session-1"
     assert snapshot["markdown"].startswith("# 每日交易日报")
+
+    reports = list_daily_report_snapshots(str(config_path))
+    assert [report["session_id"] for report in reports] == ["session-1"]
+    assert reports[0]["trade_date"] == "2024-01-02"

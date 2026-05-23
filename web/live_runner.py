@@ -244,6 +244,13 @@ def load_recovery_snapshot(
     return state.to_dict() if state is not None else None
 
 
+def list_recovery_snapshots(config_path: str = "config/local.yaml") -> list[dict[str, Any]]:
+    """List persisted recovery snapshots for API display."""
+    config = Config.from_yaml(config_path)
+    store = LiveRecoveryStore(config.data.root_path / "live_state" / "recovery")
+    return [state.to_dict() for state in store.list_states()]
+
+
 def load_daily_report_snapshot(
     session_id: str,
     config_path: str = "config/local.yaml",
@@ -266,6 +273,38 @@ def load_daily_report_snapshot(
             "positions": str(report_dir / "positions.csv"),
         },
     }
+
+
+def list_daily_report_snapshots(config_path: str = "config/local.yaml") -> list[dict[str, Any]]:
+    """List persisted daily report summaries for API display."""
+    config = Config.from_yaml(config_path)
+    report_root = config.data.root_path / "live_state" / "reports"
+    if not report_root.exists():
+        return []
+
+    reports: list[dict[str, Any]] = []
+    for summary_path in sorted(
+        report_root.glob("*/daily_summary.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    ):
+        session_id = summary_path.parent.name
+        report_path = summary_path.parent / "daily_report.md"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        reports.append(
+            {
+                "session_id": session_id,
+                "trade_date": summary.get("trade_date"),
+                "summary": summary,
+                "files": {
+                    "report": str(report_path),
+                    "summary": str(summary_path),
+                    "trades": str(summary_path.parent / "trades.csv"),
+                    "positions": str(summary_path.parent / "positions.csv"),
+                },
+            }
+        )
+    return reports
 
 
 def _run_paper(
