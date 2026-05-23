@@ -26,24 +26,23 @@
 
 ## 下一步优化动作
 
-当前建议不要继续堆 UI 细节，优先进入“研究能力 + 可回归验证”：
+当前代码侧的框架能力已完成一轮，下一步不要继续空转新增抽象，优先补“真实样本”和“人工确认链路”：
 
-1. **Phase 4 继续：完善 Benchmark 结果消费链路**
-   - `20日动量 TopN` 第一版已完成：调仓日收盘选股、下一交易日开盘成交
-   - 已补齐 CSV/JSON/Markdown 导出、标准摘要和与现有回测结果页的字段映射
-   - 已补交叉验证对账工具和 CLI；后续拿到真实外部平台导出样本后，直接执行对账并做差异归因
+1. **Phase 5：接入真实 PIT 指数成分股数据**
+   - 当前 `PointInTimeUniverseProvider` 已能读取 CSV/DataFrame 生效区间
+   - 下一步需要落地真实 `HS300_PIT` / `ZZ500_PIT` / `ZZ1000_PIT` 历史成分股文件
+   - 验收重点是避免幸存者偏差，并在 benchmark / 回测中能按交易日解析成分股
 
-2. **Phase 5 补股票池抽象**
-   - 第一版 `UniverseProvider` 已完成，静态预设已从 Web 层下沉到核心包
-   - `ALL_A_LIQUID` 初版已完成：按交易日从日线数据筛选非 ST、非停牌、足够上市天数、足够成交额、价格正常、无长期零成交的动态股票池，并输出逐股票诊断
-   - 已补 `ParquetStore.list_symbols()` 和 `StoreBackedLiquidUniverseProvider`，可直接从本地 qfq/raw bars 构建动态流动性池
-   - 已补 `PointInTimeUniverseProvider`，可从 CSV/DataFrame 解析历史成分股生效区间
-   - 下一步接真实 HS300/ZZ500/ZZ1000 历史成分股数据文件
+2. **Phase 6：执行真实外部平台对账**
+   - 当前 `scripts/run_cross_validation.py` 已能读取本地和外部平台 CSV
+   - 下一步需要准备 JoinQuant / RiceQuant / QMT 任一平台同策略导出样本
+   - 验收重点是形成一份真实 `cross_validation_report.md`，并把净值、持仓、成交差异逐项归因
 
-3. **Phase 3 后续增强**
-   - CSV/JSON/Markdown 导出已完成初版
-   - 已新增 `scripts/run_factor_report.py`，可从因子 CSV + 价格 CSV 生成报告目录
-   - 接入 Web 页面前先用 benchmark 和交叉验证结果继续验证口径
+3. **Phase 7：补 Web 实盘人工确认和恢复展示**
+   - `TradePlan` 已有 pending / approved / rejected 状态，但 Web 下单前确认流程未接入
+   - `LiveRecoveryStore` 已接入 Web 启动链路，但缺恢复入口和历史状态展示
+   - 每日交易日报已自动导出，但缺页面下载 / 查看入口
+   - 异常报警已有 JSONL / memory sink，但还缺企业微信 / 飞书 / 邮件等真实通知通道
 
 ## 进度更新约定
 
