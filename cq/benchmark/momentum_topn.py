@@ -22,7 +22,7 @@ class MomentumTopNConfig:
 
     lookback: int = 20
     top_n: int = 20
-    rebalance: Literal["D", "W"] = "W"
+    rebalance: Literal["D", "W", "M"] = "W"
     initial_capital: float = EngineConfig.initial_capital
     commission_rate: float = EngineConfig.commission_rate
     stamp_tax_rate: float = EngineConfig.stamp_tax_rate
@@ -122,8 +122,8 @@ def _validate_config(cfg: MomentumTopNConfig) -> None:
         raise ValueError("lookback must be >= 1")
     if cfg.top_n < 1:
         raise ValueError("top_n must be >= 1")
-    if cfg.rebalance not in {"D", "W"}:
-        raise ValueError("rebalance must be 'D' or 'W'")
+    if cfg.rebalance not in {"D", "W", "M"}:
+        raise ValueError("rebalance must be 'D', 'W', or 'M'")
     if cfg.initial_capital <= 0:
         raise ValueError("initial_capital must be > 0")
     if cfg.commission_rate < 0 or cfg.stamp_tax_rate < 0:
@@ -216,10 +216,11 @@ def _select_signal_dates(date_values: list[pd.Timestamp], rebalance: str) -> lis
     if rebalance == "D":
         return executable_signal_dates
 
-    weekly_dates = pd.DataFrame({"date": executable_signal_dates})
-    if weekly_dates.empty:
+    period_dates = pd.DataFrame({"date": executable_signal_dates})
+    if period_dates.empty:
         return []
-    return list(weekly_dates.groupby(weekly_dates["date"].dt.to_period("W-FRI"))["date"].max())
+    period = "M" if rebalance == "M" else "W-FRI"
+    return list(period_dates.groupby(period_dates["date"].dt.to_period(period))["date"].max())
 
 
 def _to_price_map(

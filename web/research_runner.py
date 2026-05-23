@@ -26,6 +26,7 @@ from cq.universe import (
     filter_prices_by_pit_universe,
     get_builtin_universe_provider,
 )
+from web.price_loader import load_price_data
 from web.research_store import ResearchRunStore, research_store
 
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -108,9 +109,18 @@ def run_factor_research(
 
     try:
         update(5, "加载行情")
-        price_csv = _require_price_csv(request)
-        prices = _load_prices(price_csv)
         date_bounds = _date_bounds(request)
+        periods = _normalize_periods(request.get("forward_periods") or [1, 5, 20])
+        price_result = load_price_data(
+            request,
+            required_columns=[PRICE_COL],
+            buffer_days_before=_factor_warmup_days(
+                str(request["factor_id"]),
+                dict(request.get("factor_params") or {}),
+            ),
+            buffer_days_after=max(periods) * 3 + 10,
+        )
+        prices = price_result.prices
 
         update(18, "计算因子")
         factor = compute_factor_from_prices(
@@ -129,7 +139,6 @@ def run_factor_research(
         )
 
         update(48, "计算未来收益")
-        periods = _normalize_periods(request.get("forward_periods") or [1, 5, 20])
         forward_returns = calculate_forward_returns(prices, periods=periods)
 
         update(64, "计算 IC")
@@ -158,7 +167,7 @@ def run_factor_research(
 
         update(82, "生成报告")
         output_dir = _output_dir(run_id, request.get("output_dir"))
-        metadata = _metadata(request, universe_diagnostics, price_csv)
+        metadata = _metadata(request, universe_diagnostics, price_result.diagnostics)
         exported = export_factor_report(
             factor_name=factor_name(str(request["factor_id"])),
             analysis=analysis,
@@ -180,6 +189,7 @@ def run_factor_research(
             factor=factor,
             periods=periods,
             universe_diagnostics=universe_diagnostics,
+            price_diagnostics=price_result.diagnostics,
             summary=summary,
             tables=tables,
         )
@@ -245,27 +255,6 @@ def compute_factor_from_prices(
     out = frame[[DATE_COL, SYMBOL_COL]].copy()
     out[FACTOR_COL] = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
     return out
-
-
-def _require_price_csv(request: dict[str, Any]) -> Path:
-    price_csv = request.get("price_csv")
-    if not price_csv:
-        raise ValueError("price_csv is required")
-    path = Path(str(price_csv)).expanduser()
-    if not path.exists() or not path.is_file():
-        raise FileNotFoundError(f"价格数据 CSV 不存在: {path}")
-    return path
-
-
-def _load_prices(path: Path) -> pd.DataFrame:
-    prices = pd.read_csv(path)
-    _require_columns(prices, [DATE_COL, SYMBOL_COL, PRICE_COL])
-    prices = prices.copy()
-    prices[DATE_COL] = pd.to_datetime(prices[DATE_COL])
-    prices[SYMBOL_COL] = prices[SYMBOL_COL].astype(str).str.upper()
-    prices[PRICE_COL] = pd.to_numeric(prices[PRICE_COL], errors="coerce")
-    prices = prices.dropna(subset=[DATE_COL, SYMBOL_COL, PRICE_COL])
-    return prices.sort_values([SYMBOL_COL, DATE_COL], kind="mergesort").reset_index(drop=True)
 
 
 def _date_bounds(request: dict[str, Any]) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -375,6 +364,19 @@ def _normalize_periods(raw_periods: list[Any]) -> list[int]:
     return periods
 
 
+def _factor_warmup_days(factor_id: str, factor_params: dict[str, Any]) -> int:
+    params = {**FACTOR_PRESETS.get(factor_id, {}).get("params", {}), **factor_params}
+    if factor_id in {"momentum_20d", "reversal_5d"}:
+        lookback = int(params.get("lookback", 20))
+    elif factor_id == "volatility_20d":
+        lookback = int(params.get("window", 20))
+    elif factor_id == "ma_trend_20_60":
+        lookback = int(params.get("slow", 60))
+    else:
+        lookback = 20
+    return lookback * 3 + 30
+
+
 def _output_dir(run_id: str, requested: Any) -> Path:
     root = Path(str(requested)).expanduser() if requested else Path("output/research")
     return root / run_id
@@ -383,7 +385,7 @@ def _output_dir(run_id: str, requested: Any) -> Path:
 def _metadata(
     request: dict[str, Any],
     universe_diagnostics: dict[str, Any],
-    price_csv: Path,
+    price_diagnostics: dict[str, Any],
 ) -> dict[str, Any]:
     neutralize = str(request.get("neutralize") or "none")
     return {
@@ -396,7 +398,10 @@ def _metadata(
         "zscore": bool(request.get("zscore", True)),
         "neutralize": neutralize,
         "neutralize_status": "applied" if neutralize == "none" else "unavailable_no_metadata",
-        "price_csv": str(price_csv),
+        "price_source": price_diagnostics.get("source"),
+        "price_path": price_diagnostics.get("path"),
+        "data_root": price_diagnostics.get("data_root"),
+        "adjust": price_diagnostics.get("adjust"),
         "universe_quality": universe_diagnostics.get("quality"),
         "universe_source": universe_diagnostics.get("source"),
     }
@@ -437,6 +442,7 @@ def _diagnostics(
     factor: pd.DataFrame,
     periods: list[int],
     universe_diagnostics: dict[str, Any],
+    price_diagnostics: dict[str, Any],
     summary: dict[str, Any],
     tables: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
@@ -447,6 +453,7 @@ def _diagnostics(
         "valid_factor_rows": valid_factor,
         "missing_factor_rows": int(len(factor) - valid_factor),
         "forward_periods": periods,
+        "price": price_diagnostics,
         "data_quality": universe_diagnostics.get("quality", "unknown"),
         "universe": universe_diagnostics,
         "lookahead_risk": "checked_forward_returns_shifted_by_symbol",

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from cq.data.store.parquet_store import ParquetStore
 from web.research_runner import compute_factor_from_prices, run_factor_research
 from web.research_store import ResearchRunStore
 
@@ -73,6 +74,53 @@ def test_run_factor_research_writes_result_and_artifacts(tmp_path):
     assert summary["factor_name"] == "20日动量"
 
 
+def test_run_factor_research_can_use_local_downloaded_cache(tmp_path):
+    prices = _price_frame()
+    store = ParquetStore(tmp_path / "data")
+    _write_store_prices(store, prices)
+
+    run_store = ResearchRunStore(tmp_path / "research.db")
+    request = {
+        "factor_id": "momentum_20d",
+        "factor_params": {},
+        "universe_id": "core50",
+        "price_source": "local_cache",
+        "price_csv": None,
+        "data_root": str(tmp_path / "data"),
+        "adjust": "qfq",
+        "pit_csv": None,
+        "start_date": "2024-02-01",
+        "end_date": "2024-03-15",
+        "forward_periods": [1, 5],
+        "groups": 3,
+        "ic_method": "spearman",
+        "rebalance": "weekly",
+        "sample_split_date": None,
+        "winsorize": True,
+        "zscore": True,
+        "neutralize": "none",
+        "output_dir": str(tmp_path / "research_output"),
+    }
+    record = run_store.create(
+        factor_id="momentum_20d",
+        factor_name="20日动量",
+        universe_id="core50",
+        start_date=request["start_date"],
+        end_date=request["end_date"],
+        request=request,
+        output_dir=request["output_dir"],
+    )
+
+    run_factor_research(record.run_id, request, store=run_store)
+
+    saved = run_store.get(record.run_id)
+    assert saved is not None
+    assert saved.status == "completed", saved.error
+    assert saved.result is not None
+    assert saved.result["diagnostics"]["price"]["source"] == "local_cache"
+    assert saved.result["diagnostics"]["price"]["symbols_loaded"] == 5
+
+
 def _price_frame() -> pd.DataFrame:
     symbols = ["600519.SH", "000858.SZ", "600036.SH", "601318.SH", "600276.SH"]
     dates = pd.bdate_range("2024-01-01", periods=70)
@@ -83,3 +131,10 @@ def _price_frame() -> pd.DataFrame:
             close = 100 + day_index * drift + symbol_index
             rows.append({"date": trade_date.date().isoformat(), "symbol": symbol, "close": close})
     return pd.DataFrame(rows)
+
+
+def _write_store_prices(store: ParquetStore, prices: pd.DataFrame) -> None:
+    for symbol, group in prices.groupby("symbol", sort=False):
+        bars = group.rename(columns={"date": "trade_date"})[["trade_date", "close"]].copy()
+        bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.date
+        store.write_daily_bars(symbol, bars, adjust="qfq", mode="overwrite")

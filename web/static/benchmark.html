@@ -32,8 +32,15 @@
       <h2 class="text-sm font-semibold text-gray-300 mb-4">实验配置</h2>
       <form id="benchmark-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm text-gray-400 mb-1">价格数据 CSV</label>
-          <input id="price-csv" type="text" placeholder="data/research/prices.csv"
+          <label class="block text-sm text-gray-400 mb-1">价格数据源</label>
+          <select id="price-source" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="local_cache">本地已下载行情</option>
+            <option value="csv">CSV 导入</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">价格数据 CSV（可选覆盖）</label>
+          <input id="price-csv" type="text" placeholder="留空则使用本地缓存；CSV 需含 date,symbol,open,close"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
         </div>
         <div>
@@ -48,8 +55,13 @@
         </div>
         <div>
           <label class="block text-sm text-gray-400 mb-1">股票池</label>
-          <input id="universe-id" type="text" value="HS300_PIT"
+          <input id="universe-id" type="text" value="core50"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">PIT 股票池 CSV（可选）</label>
+          <input id="pit-csv" type="text" placeholder="data/universes/pit_memberships.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
         </div>
         <div>
           <label class="block text-sm text-gray-400 mb-1">Top N</label>

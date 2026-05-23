@@ -23,16 +23,16 @@
 | Phase 5 股票池体系升级 | 已完成增强版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；新增 `cq import-pit-universe` 标准化 PIT CSV、诊断 JSON 和 benchmark 逐日 PIT 过滤；新增 `cq validate-pit-universe` 输出 PIT 校验 JSON/CSV/Markdown；新增 `cq fetch-pit-universe --provider akshare`，可用免费 AkShare / 中证公开接口下载三大宽基最新成分和权重快照；新增 `cq fetch-pit-universe --provider tushare`，可按月下载 Tushare `index_weight` 并生成严格历史成分区间和权重快照；fetch 会写出 `pit_fetch_summary.json`、`pit_fetch_report.md` 和 PIT CSV 同名 sidecar，记录 provider、数据质量、快照日期和 `effective_coverage_start`；`cq benchmark` 会自动读取 sidecar 并写入 `universe_source` / `universe_quality_warning`；AkShare 路径标记为 best-effort 当前快照，不能替代严格历史 PIT |
 | Phase 6 平台交叉验证 | 已完成增强版 | 已新增 `cq/benchmark/cross_validation.py`、`scripts/run_cross_validation.py`、`cq cross-validate` 和 `docs/cross_validation_report.md`；可从本地/外部平台 CSV 直接加载、标准化常见字段别名、比较每日净值/持仓/成交并导出差异报告；新增 `cq cross-validation-template` 生成外部平台导出模板和假设记录文件；真实外部平台样本对账待执行 |
 | Phase 7 模拟盘 / 实盘安全层 | 已完成增强版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、`TradePlanStore`、交易计划创建/审批/拒绝 API、实盘启动已批准计划门禁、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报、通用/飞书/企微 Webhook 报警 sink；交易页已展示交易计划、恢复状态、交易日报 |
-| Phase W Web 研究工作台 | 已完成初版 | 新增 `/healthz`、`/api/version`、`/api/runtime`；导航新增“因子研究 / Benchmark”；新增 `research.html`、`research_result.html`、`benchmark.html`、`validation.html`；新增 `web/routers/research.py`、`web/research_runner.py`、`web/research_store.py`，支持因子 preset、异步研究任务、SSE、结果表、artifact 下载和历史记录；新增 Web benchmark API/runner/store，能运行 20日动量 TopN 并导出实验包；新增 validation API，支持生成外部平台模板和本地/外部 CSV 对账报告；数据管理页升级“数据质量中心”；回测结果页新增执行诊断和成本归因面板；Chrome DevTools MCP 已验证 `/research.html` 页面和 research presets/universes/history API 为 200，工具使用限制导致未完成自动填表交互，已由 API/web smoke 测试覆盖任务链路 |
+| Phase W Web 研究工作台 | 已完成初版 | 新增 `/healthz`、`/api/version`、`/api/runtime`；导航新增“因子研究 / Benchmark”；新增 `research.html`、`research_result.html`、`benchmark.html`、`validation.html`；新增 `web/routers/research.py`、`web/research_runner.py`、`web/research_store.py`，支持因子 preset、异步研究任务、SSE、结果表、artifact 下载和历史记录；新增 Web benchmark API/runner/store，能运行 20日动量 TopN 并导出实验包；新增 validation API，支持生成外部平台模板和本地/外部 CSV 对账报告；数据管理页升级“数据质量中心”；回测结果页新增执行诊断和成本归因面板；研究/Benchmark 价格源已从 CSV-only 改为默认读取本地已下载 Parquet 行情缓存，CSV 保留为外部导入/复现实验覆盖入口；Benchmark 页面已补 PIT CSV 输入并将默认股票池改为可直接解析的 `core50`，避免无 PIT 文件时默认 `HS300_PIT` 失败；Chrome DevTools MCP 已验证 `/research.html` 页面和 research presets/universes/history API 为 200，工具使用限制导致未完成自动填表交互，已由 API/web smoke 测试覆盖任务链路 |
 
 ## 下一步优化动作
 
 当前代码侧的框架能力和 Web 入口已完成初版，下一步不要继续空转新增抽象，优先补“真实样本”、“外部对账”和 Web 交互硬化：
 
 1. **Phase W：Web 研究工作台硬化**
-   - 使用真实本地价格 CSV 在浏览器完整走通 `research → research_result → benchmark → validation`；本轮 Chrome DevTools MCP 已确认页面和 API 可访问，但自动填表被工具使用限制打断
+   - 使用本地已下载行情缓存或真实本地价格 CSV 在浏览器完整走通 `research → research_result → benchmark → validation`；本轮 Chrome DevTools MCP 已确认页面和 API 可访问，但自动填表被工具使用限制打断
    - Benchmark 页面下一步可补结果页独立路由和历史列表，validation 页面可补本地文件选择/上传体验
-   - 研究页面下一步可接入本地数据目录选择和 PIT 质量预检查，减少手填 CSV 路径
+   - 研究页面下一步补本地数据目录可视化选择和 PIT 质量预检查；当前已支持默认从本地缓存读取价格，减少手填 CSV 路径
    - 验收重点是无命令行完成一次 momentum_20d 因子研究，并从结果页一键生成 benchmark 实验包
 
 2. **Phase 5：接入真实 PIT 指数成分股数据**

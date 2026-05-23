@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from cq.data.store.parquet_store import ParquetStore
 from web.benchmark_runner import run_benchmark
 from web.benchmark_store import BenchmarkRunStore
 
@@ -44,6 +45,47 @@ def test_run_benchmark_writes_experiment_package(tmp_path):
     assert set(saved.artifacts) >= {"config", "summary", "report", "equity_curve", "trades"}
 
 
+def test_run_benchmark_can_use_local_downloaded_cache(tmp_path):
+    store = ParquetStore(tmp_path / "data")
+    _write_store_prices(store, _price_frame())
+    run_store = BenchmarkRunStore(tmp_path / "benchmark.db")
+    request = {
+        "price_source": "local_cache",
+        "price_csv": None,
+        "data_root": str(tmp_path / "data"),
+        "adjust": "qfq",
+        "output_dir": str(tmp_path / "benchmark_output"),
+        "universe_id": "core50",
+        "pit_csv": None,
+        "start_date": "2024-01-01",
+        "end_date": "2024-04-15",
+        "lookback": 20,
+        "top_n": 3,
+        "rebalance": "monthly",
+        "initial_capital": 1_000_000,
+        "commission_rate": 0.00015,
+        "stamp_tax_rate": 0.0005,
+        "min_commission": 5,
+        "max_position_weight": 1.0,
+    }
+    record = run_store.create(
+        name="20日动量 TopN Benchmark",
+        universe_id="core50",
+        request=request,
+        output_dir=request["output_dir"],
+    )
+
+    run_benchmark(record.run_id, request, store=run_store)
+
+    saved = run_store.get(record.run_id)
+    assert saved is not None
+    assert saved.status == "completed", saved.error
+    assert saved.result is not None
+    assert saved.result["diagnostics"]["price"]["source"] == "local_cache"
+    assert saved.result["diagnostics"]["price"]["symbols_loaded"] == 5
+    assert saved.result["summary"]["summary"]["trading_days"] > 0
+
+
 def _price_frame() -> pd.DataFrame:
     symbols = ["600519.SH", "000858.SZ", "600036.SH", "601318.SH", "600276.SH"]
     dates = pd.bdate_range("2024-01-01", periods=90)
@@ -59,3 +101,12 @@ def _price_frame() -> pd.DataFrame:
                 "close": close,
             })
     return pd.DataFrame(rows)
+
+
+def _write_store_prices(store: ParquetStore, prices: pd.DataFrame) -> None:
+    for symbol, group in prices.groupby("symbol", sort=False):
+        bars = group.rename(columns={"date": "trade_date"})[
+            ["trade_date", "open", "close"]
+        ].copy()
+        bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.date
+        store.write_daily_bars(symbol, bars, adjust="qfq", mode="overwrite")

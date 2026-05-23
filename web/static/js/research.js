@@ -88,7 +88,9 @@ function buildRequest() {
   return {
     factor_id: $("factor-id")?.value,
     universe_id: $("universe-id")?.value,
+    price_source: $("price-source")?.value || "local_cache",
     price_csv: $("price-csv")?.value || null,
+    adjust: "qfq",
     pit_csv: $("pit-csv")?.value || null,
     start_date: $("start-date")?.value,
     end_date: $("end-date")?.value,

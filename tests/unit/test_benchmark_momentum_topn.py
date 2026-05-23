@@ -133,6 +133,37 @@ def test_momentum_topn_sells_positions_that_drop_out_of_top_n_before_buying():
     assert (second_rebalance[second_rebalance["side"] == "SELL"]["stamp_tax"] > 0).all()
 
 
+def test_momentum_topn_supports_monthly_rebalance():
+    prices = _price_frame(
+        {
+            "000001.SZ": [10, 11, 12, 13, 14, 15],
+            "000002.SZ": [10, 10, 10, 10, 10, 10],
+        },
+        dates=[
+            "2024-01-29",
+            "2024-01-30",
+            "2024-01-31",
+            "2024-02-01",
+            "2024-02-02",
+            "2024-02-05",
+        ],
+    )
+
+    result = run_momentum_topn_benchmark(
+        prices,
+        MomentumTopNConfig(lookback=1, top_n=1, rebalance="M", initial_capital=1_000_000),
+    )
+
+    assert result.signals["signal_date"].drop_duplicates().tolist() == [
+        pd.Timestamp("2024-01-31"),
+        pd.Timestamp("2024-02-02"),
+    ]
+    assert result.signals["execute_date"].drop_duplicates().tolist() == [
+        pd.Timestamp("2024-02-01"),
+        pd.Timestamp("2024-02-05"),
+    ]
+
+
 def test_momentum_topn_validates_required_columns():
     prices = pd.DataFrame({"date": ["2024-01-01"], "symbol": ["000001.SZ"], "close": [10]})
 

@@ -32,9 +32,12 @@
 
   function requestPayload() {
     return {
+      price_source: $("price-source")?.value || "local_cache",
       price_csv: $("price-csv")?.value,
+      adjust: "qfq",
       output_dir: $("output-dir")?.value || null,
       universe_id: $("universe-id")?.value || null,
+      pit_csv: $("pit-csv")?.value || null,
       lookback: 20,
       top_n: Number.parseInt($("top-n")?.value || "20", 10),
       rebalance: $("rebalance")?.value || "weekly",

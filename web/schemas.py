@@ -7,7 +7,6 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-
 # ── 策略 ─────────────────────────────────────────────────────────────────────
 
 
@@ -327,7 +326,10 @@ class FactorResearchRequest(BaseModel):
     factor_id: str
     factor_params: dict[str, Any] = Field(default_factory=dict)
     universe_id: str
-    price_csv: Optional[str] = None
+    price_source: Literal["local_cache", "csv"] = "local_cache"
+    price_csv: str | None = None
+    data_root: str | None = None
+    adjust: Literal["qfq", "raw"] = "qfq"
     pit_csv: Optional[str] = None
     start_date: date
     end_date: date
@@ -391,7 +393,10 @@ class FactorResearchHistoryResponse(BaseModel):
 
 
 class BenchmarkRunRequest(BaseModel):
-    price_csv: str
+    price_source: Literal["local_cache", "csv"] = "local_cache"
+    price_csv: str | None = None
+    data_root: str | None = None
+    adjust: Literal["qfq", "raw"] = "qfq"
     output_dir: Optional[str] = None
     universe_id: Optional[str] = None
     pit_csv: Optional[str] = None
@@ -399,7 +404,7 @@ class BenchmarkRunRequest(BaseModel):
     end_date: Optional[date] = None
     lookback: int = Field(default=20, ge=1)
     top_n: int = Field(default=20, ge=1)
-    rebalance: Literal["daily", "weekly"] = "weekly"
+    rebalance: Literal["daily", "weekly", "monthly"] = "weekly"
     initial_capital: float = Field(default=1_000_000, gt=0)
     commission_rate: float = Field(default=0.00015, ge=0.0)
     stamp_tax_rate: float = Field(default=0.0005, ge=0.0)
