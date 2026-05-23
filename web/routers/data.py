@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from typing import Optional
 from uuid import uuid4
 
 import pandas as pd
@@ -22,7 +20,7 @@ from cq.data.pipeline import DataPipeline
 from cq.data.source import create_source
 from cq.data.store.parquet_store import ParquetStore
 from cq.utils.config import Config
-from web.routers.symbols import _name_cache, _load_name_cache, _local_symbols
+from web.routers.symbols import _load_name_cache, _local_symbols, _name_cache
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -33,8 +31,8 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 class SymbolDataInfo:
     symbol: str
     name: str
-    first_date: Optional[str]
-    last_date: Optional[str]
+    first_date: str | None
+    last_date: str | None
     records: int
 
 
@@ -43,7 +41,7 @@ class DataStatsResponse:
     total_symbols: int
     total_records: int
     disk_usage_mb: float
-    latest_date: Optional[str]
+    latest_date: str | None
 
 
 class DownloadRequest(BaseModel):
@@ -154,7 +152,7 @@ async def get_stats() -> dict:
 
     symbols = _local_symbols(store)
     total_records = 0
-    latest_date: Optional[str] = None
+    latest_date: str | None = None
     total_bytes = 0
 
     bars_root = store._root / "bars"

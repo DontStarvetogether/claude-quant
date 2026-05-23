@@ -8,9 +8,9 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -54,8 +54,8 @@ class MetricsResult:
     final_value: float
     initial_value: float
     # 最大回撤区间
-    max_drawdown_start: Optional[date]
-    max_drawdown_end: Optional[date]
+    max_drawdown_start: date | None
+    max_drawdown_end: date | None
     # 基准对比
     excess_return: float = 0.0
     alpha: float = 0.0
@@ -88,6 +88,10 @@ class MetricsResult:
     average_exposure: float = 0.0
     max_single_position_weight: float = 0.0
     avg_top5_concentration: float = 0.0
+    industry_exposure: dict[str, float] = field(default_factory=dict)
+    market_cap_exposure: dict[str, float] = field(default_factory=dict)
+    style_exposure: dict[str, float] = field(default_factory=dict)
+    exposure_diagnostics: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -123,6 +127,10 @@ class MetricsResult:
             "average_exposure": self.average_exposure,
             "max_single_position_weight": self.max_single_position_weight,
             "avg_top5_concentration": self.avg_top5_concentration,
+            "industry_exposure": self.industry_exposure,
+            "market_cap_exposure": self.market_cap_exposure,
+            "style_exposure": self.style_exposure,
+            "exposure_diagnostics": self.exposure_diagnostics,
             "win_rate": self.win_rate,
             "avg_profit": self.avg_profit,
             "avg_loss": self.avg_loss,
@@ -180,6 +188,8 @@ class PerformanceMetrics:
         equity_curve: pd.Series,
         trades: list[Trade],
         account_history: dict[date, AccountSnapshot] | None = None,
+        position_metadata: pd.DataFrame | None = None,
+        slippage_costs: Mapping[str, float] | None = None,
     ) -> MetricsResult:
         """
         计算完整绩效指标。
@@ -237,10 +247,12 @@ class PerformanceMetrics:
 
         # 费用
         total_fees = sum(t.commission + t.stamp_tax for t in trades)
+        total_slippage_cost = _sum_slippage_costs(slippage_costs)
         avg_assets = float(equity_curve.mean()) if len(equity_curve) else float(initial)
         turnover_stats = self._turnover_stats(equity_curve, trades, avg_assets)
         exposure_stats = self._exposure_stats(account_history)
-        cost_drag = total_fees / initial if initial > 0 else 0.0
+        metadata_exposure = self._metadata_exposure_stats(account_history, position_metadata)
+        cost_drag = (total_fees + total_slippage_cost) / initial if initial > 0 else 0.0
         gross_return = total_return + cost_drag
         gross_annual_return = (
             (1 + gross_return) ** (self.TRADING_DAYS / n_days) - 1
@@ -271,7 +283,7 @@ class PerformanceMetrics:
             net_return=round(total_return, 6),
             gross_annual_return=round(gross_annual_return, 6),
             net_annual_return=round(annual_return, 6),
-            total_slippage_cost=0.0,
+            total_slippage_cost=round(total_slippage_cost, 2),
             cost_drag=round(cost_drag, 6),
             cost_to_nav=round(total_fees / avg_assets, 6) if avg_assets > 0 else 0.0,
             avg_position_count=round(exposure_stats["avg_position_count"], 6),
@@ -281,6 +293,10 @@ class PerformanceMetrics:
             average_exposure=round(exposure_stats["average_exposure"], 6),
             max_single_position_weight=round(exposure_stats["max_single_position_weight"], 6),
             avg_top5_concentration=round(exposure_stats["avg_top5_concentration"], 6),
+            industry_exposure=metadata_exposure["industry_exposure"],
+            market_cap_exposure=metadata_exposure["market_cap_exposure"],
+            style_exposure=metadata_exposure["style_exposure"],
+            exposure_diagnostics=metadata_exposure["diagnostics"],
             win_rate=round(trade_stats["win_rate"], 4),
             avg_profit=round(trade_stats["avg_profit"], 6),
             avg_loss=round(trade_stats["avg_loss"], 6),
@@ -395,6 +411,78 @@ class PerformanceMetrics:
             "avg_top5_concentration": (
                 float(np.mean(top5_concentrations)) if top5_concentrations else 0.0
             ),
+        }
+
+    @staticmethod
+    def _metadata_exposure_stats(
+        account_history: dict[date, AccountSnapshot] | None,
+        position_metadata: pd.DataFrame | None,
+    ) -> dict[str, dict[str, float] | dict[str, object]]:
+        """Calculate average industry/market-cap/style exposures when metadata is provided."""
+        empty = {
+            "industry_exposure": {},
+            "market_cap_exposure": {},
+            "style_exposure": {},
+            "diagnostics": {
+                "status": "unavailable",
+                "reason": "position_metadata not provided",
+            },
+        }
+        if not account_history:
+            empty["diagnostics"] = {"status": "unavailable", "reason": "account_history not provided"}
+            return empty
+        if position_metadata is None or position_metadata.empty:
+            return empty
+        if "symbol" not in position_metadata.columns:
+            raise ValueError("position_metadata missing required column: symbol")
+
+        metadata = position_metadata.copy()
+        metadata["symbol"] = metadata["symbol"].astype(str).str.upper()
+        metadata = metadata.drop_duplicates("symbol", keep="last").set_index("symbol")
+
+        if "market_cap_bucket" not in metadata.columns and "market_cap" in metadata.columns:
+            metadata["market_cap_bucket"] = _market_cap_bucket(metadata["market_cap"])
+
+        exposures: dict[str, defaultdict[str, float]] = {
+            "industry": defaultdict(float),
+            "market_cap": defaultdict(float),
+            "style": defaultdict(float),
+        }
+        total_weight_seen = 0.0
+        missing_symbols: set[str] = set()
+        snapshot_count = 0
+
+        for _, snapshot in sorted(account_history.items(), key=lambda item: item[0]):
+            total_assets = float(snapshot.total_assets)
+            if total_assets <= 0:
+                continue
+            snapshot_count += 1
+            for symbol, position in snapshot.positions.items():
+                if position.total_qty <= 0 or position.market_value <= 0:
+                    continue
+                weight = float(position.market_value) / total_assets
+                total_weight_seen += weight
+                row = metadata.loc[symbol] if symbol in metadata.index else None
+                if row is None:
+                    missing_symbols.add(symbol)
+                    continue
+                _add_exposure(exposures["industry"], row, "industry", weight)
+                _add_exposure(exposures["market_cap"], row, "market_cap_bucket", weight)
+                _add_exposure(exposures["style"], row, "style", weight)
+
+        divisor = max(snapshot_count, 1)
+        diagnostics = {
+            "status": "available",
+            "snapshot_count": snapshot_count,
+            "metadata_symbols": int(len(metadata)),
+            "missing_symbols": sorted(missing_symbols),
+            "average_classified_weight": round(total_weight_seen / divisor, 6),
+        }
+        return {
+            "industry_exposure": _normalize_exposure(exposures["industry"], divisor),
+            "market_cap_exposure": _normalize_exposure(exposures["market_cap"], divisor),
+            "style_exposure": _normalize_exposure(exposures["style"], divisor),
+            "diagnostics": diagnostics,
         }
 
     @staticmethod
@@ -570,3 +658,47 @@ class PerformanceMetrics:
             total_fees=0.0, final_value=initial, initial_value=initial,
             max_drawdown_start=None, max_drawdown_end=None,
         )
+
+
+def _sum_slippage_costs(slippage_costs: Mapping[str, float] | None) -> float:
+    if not slippage_costs:
+        return 0.0
+    return float(sum(max(float(value), 0.0) for value in slippage_costs.values()))
+
+
+def _add_exposure(
+    exposures: defaultdict[str, float],
+    metadata_row: pd.Series,
+    column: str,
+    weight: float,
+) -> None:
+    if column not in metadata_row.index:
+        return
+    value = metadata_row[column]
+    if pd.isna(value) or value == "":
+        return
+    exposures[str(value)] += weight
+
+
+def _normalize_exposure(exposures: defaultdict[str, float], divisor: int) -> dict[str, float]:
+    if divisor <= 0:
+        return {}
+    return {
+        key: round(float(value) / divisor, 6)
+        for key, value in sorted(exposures.items(), key=lambda item: item[0])
+    }
+
+
+def _market_cap_bucket(values: pd.Series) -> pd.Series:
+    caps = pd.to_numeric(values, errors="coerce")
+    if caps.notna().sum() < 3:
+        return pd.Series(["unknown" if pd.isna(value) else "mid" for value in caps], index=values.index)
+    ranks = caps.rank(method="first", pct=True)
+    return pd.Series(
+        np.select(
+            [ranks <= 1 / 3, ranks <= 2 / 3],
+            ["small", "mid"],
+            default="large",
+        ),
+        index=values.index,
+    )

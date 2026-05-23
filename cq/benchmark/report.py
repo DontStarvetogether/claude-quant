@@ -176,6 +176,7 @@ def export_benchmark_result(
     name: str = "20日动量 TopN Benchmark",
     universe: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | None = None,
     include_report: bool = True,
 ) -> BenchmarkExport:
     """Export benchmark frames, summary JSON, and an optional Markdown report."""
@@ -194,11 +195,27 @@ def export_benchmark_result(
         files[key] = path
 
     summary = summarize_benchmark_result(result)
+    if config is not None:
+        config_path = out / "config.json"
+        config_payload = {
+            "schema_version": SCHEMA_VERSION,
+            "name": name,
+            "universe": universe,
+            "config": dict(config),
+            "metadata": dict(metadata or {}),
+        }
+        config_path.write_text(
+            json.dumps(_json_safe(config_payload), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        files["config"] = config_path
+
     summary_payload = {
         "schema_version": SCHEMA_VERSION,
         "name": name,
         "universe": universe,
         "metadata": dict(metadata or {}),
+        "config": dict(config or {}),
         "summary": summary.to_dict(),
         "backtest_field_mapping": _backtest_field_mapping(),
         "files": {key: path.name for key, path in files.items()},
@@ -237,8 +254,45 @@ def _scope_section(
         ["交易日数", str(summary.trading_days)],
     ]
     if metadata:
-        rows.extend([[str(key), str(value)] for key, value in metadata.items()])
+        rows.extend(_metadata_rows(metadata))
     return ["## 测试范围", "", _markdown_table(["项目", "值"], rows), ""]
+
+
+def _metadata_rows(metadata: Mapping[str, Any]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    source = metadata.get("universe_source")
+    if isinstance(source, Mapping):
+        rows.extend(_universe_source_rows(source))
+    warning = metadata.get("universe_quality_warning")
+    if warning:
+        rows.append(["股票池质量警告", str(warning)])
+
+    for key, value in metadata.items():
+        if key in {"universe_source", "universe_quality_warning"}:
+            continue
+        rows.append([str(key), _metadata_value(value)])
+    return rows
+
+
+def _universe_source_rows(source: Mapping[str, Any]) -> list[list[str]]:
+    rows = [
+        ["股票池数据源", _metadata_value(source.get("provider", "—"))],
+        ["股票池数据质量", _metadata_value(source.get("source_quality", "—"))],
+        ["严格历史 PIT", "是" if source.get("strict_historical_pit") is True else "否"],
+    ]
+    if source.get("effective_coverage_start"):
+        rows.append(["有效覆盖起点", _metadata_value(source["effective_coverage_start"])])
+    if source.get("snapshot_dates"):
+        rows.append(["快照日期", _metadata_value(source["snapshot_dates"])])
+    return rows
+
+
+def _metadata_value(value: Any) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, (Mapping, list, tuple)):
+        return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True)
+    return str(value)
 
 
 def _metric_section(summary: BenchmarkSummary) -> list[str]:

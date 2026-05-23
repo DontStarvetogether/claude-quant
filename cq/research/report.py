@@ -41,6 +41,7 @@ def generate_factor_report(
     start_date: str | None = None,
     end_date: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    sample_split_date: str | None = None,
     date_col: str = "date",
 ) -> FactorReport:
     """Generate a Markdown summary for single-factor analysis results."""
@@ -49,6 +50,7 @@ def generate_factor_report(
     lines: list[str] = [f"# 因子报告：{factor_name}", ""]
     lines.extend(_scope_section(universe, start_date, end_date, metadata))
     lines.extend(_coverage_section(analysis.coverage))
+    lines.extend(_sample_split_section(analysis.coverage, sample_split_date, date_col=date_col))
     lines.extend(_ic_section(ic_summary))
     lines.extend(_group_section(analysis.group_return, analysis.group_nav, date_col=date_col))
     lines.extend(_top_bottom_section(analysis.top_bottom_return))
@@ -68,6 +70,7 @@ def export_factor_report(
     start_date: str | None = None,
     end_date: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    sample_split_date: str | None = None,
     date_col: str = "date",
     include_markdown: bool = True,
 ) -> FactorReportExport:
@@ -80,6 +83,7 @@ def export_factor_report(
         start_date=start_date,
         end_date=end_date,
         metadata=metadata,
+        sample_split_date=sample_split_date,
         date_col=date_col,
     )
 
@@ -99,6 +103,12 @@ def export_factor_report(
         "start_date": start_date,
         "end_date": end_date,
         "metadata": dict(metadata or {}),
+        "sample_split_date": sample_split_date,
+        "sample_diagnostics": sample_split_diagnostics(
+            analysis.coverage,
+            sample_split_date,
+            date_col=date_col,
+        ),
         "table_rows": {key: int(len(frame)) for key, frame in tables.items()},
         "ic_summary": _json_records(ic_summary),
         "files": {key: path.name for key, path in files.items()},
@@ -144,6 +154,55 @@ def _coverage_section(coverage: pd.DataFrame) -> list[str]:
             ["平均股票数", _fmt_num(coverage["available_count"].mean(), 1)],
         ]
     return ["## 覆盖率", "", _markdown_table(["指标", "值"], rows), ""]
+
+
+def sample_split_diagnostics(
+    coverage: pd.DataFrame,
+    sample_split_date: str | None,
+    *,
+    date_col: str = "date",
+) -> dict[str, Any]:
+    """Summarize in-sample/out-of-sample coverage around a split date."""
+
+    if not sample_split_date:
+        return {"status": "unavailable", "reason": "sample_split_date not provided"}
+    if coverage.empty:
+        return {"status": "unavailable", "reason": "coverage is empty"}
+    if date_col not in coverage.columns:
+        raise ValueError(f"coverage missing date column: {date_col}")
+
+    split = pd.Timestamp(sample_split_date)
+    data = coverage.copy()
+    data[date_col] = pd.to_datetime(data[date_col])
+    in_sample = data[data[date_col] <= split]
+    out_sample = data[data[date_col] > split]
+    return {
+        "status": "available",
+        "split_date": split.date().isoformat(),
+        "in_sample_dates": int(len(in_sample)),
+        "out_of_sample_dates": int(len(out_sample)),
+        "in_sample_avg_coverage": _safe_mean(in_sample, "coverage"),
+        "out_of_sample_avg_coverage": _safe_mean(out_sample, "coverage"),
+    }
+
+
+def _sample_split_section(
+    coverage: pd.DataFrame,
+    sample_split_date: str | None,
+    *,
+    date_col: str,
+) -> list[str]:
+    diagnostics = sample_split_diagnostics(coverage, sample_split_date, date_col=date_col)
+    if diagnostics["status"] != "available":
+        return []
+    rows = [
+        ["切分日期", str(diagnostics["split_date"])],
+        ["样本内日期数", str(diagnostics["in_sample_dates"])],
+        ["样本外日期数", str(diagnostics["out_of_sample_dates"])],
+        ["样本内平均覆盖率", _fmt_pct(diagnostics["in_sample_avg_coverage"])],
+        ["样本外平均覆盖率", _fmt_pct(diagnostics["out_of_sample_avg_coverage"])],
+    ]
+    return ["## 样本切分诊断", "", _markdown_table(["项目", "值"], rows), ""]
 
 
 def _ic_section(ic_summary: pd.DataFrame) -> list[str]:
@@ -288,6 +347,15 @@ def _to_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if np.isfinite(number) else None
+
+
+def _safe_mean(frame: pd.DataFrame, column: str) -> float | None:
+    if frame.empty or column not in frame.columns:
+        return None
+    series = pd.to_numeric(frame[column], errors="coerce").dropna()
+    if series.empty:
+        return None
+    return float(series.mean())
 
 
 def _date_range(start_date: str | None, end_date: str | None) -> str:

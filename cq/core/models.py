@@ -10,24 +10,22 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from enum import Enum
-from typing import Optional
-
+from enum import StrEnum
 
 # ── 枚举 ────────────────────────────────────────────────────────────────────
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     MARKET = "MARKET"   # 市价单（次日开盘价）
     LIMIT = "LIMIT"     # 限价单
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     PENDING = "PENDING"     # 等待撮合
     FILLED = "FILLED"       # 已成交
     REJECTED = "REJECTED"   # 已拒绝
@@ -78,12 +76,12 @@ class Signal:
     order_type: OrderType = OrderType.MARKET
 
     # 三选一（由 PreTradeRisk 解析为具体金额/数量）
-    quantity: Optional[int] = None       # 指定股数（100 整数倍）
-    percent: Optional[float] = None      # 占总资产比例
-    amount: Optional[float] = None       # 指定金额（元）
+    quantity: int | None = None       # 指定股数（100 整数倍）
+    percent: float | None = None      # 占总资产比例
+    amount: float | None = None       # 指定金额（元）
 
-    limit_price: Optional[float] = None  # 限价单专用
-    created_at: Optional[datetime] = None
+    limit_price: float | None = None  # 限价单专用
+    created_at: datetime | None = None
 
 
 # ── 订单 ────────────────────────────────────────────────────────────────────
@@ -99,11 +97,11 @@ class Order:
     side: OrderSide
     order_type: OrderType
     quantity: int            # 明确的股数（100 整数倍）
-    limit_price: Optional[float]
+    limit_price: float | None
     trade_date: date         # 下单交易日（D 日），D+1 才撮合
     allow_partial_fill: bool = True  # 资金不足时是否允许按整手缩量成交
     status: OrderStatus = OrderStatus.PENDING
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 # ── 成交 ────────────────────────────────────────────────────────────────────
@@ -124,9 +122,9 @@ class Trade:
     stamp_tax: float         # 印花税（卖出时）
     trade_time: datetime
     trade_date: date
-    requested_quantity: Optional[int] = None
+    requested_quantity: int | None = None
     capacity_limited: bool = False
-    capacity_limit_qty: Optional[int] = None
+    capacity_limit_qty: int | None = None
 
     @property
     def net_amount(self) -> float:

@@ -77,6 +77,5 @@ class BollingerStrategy(Strategy):
                 self.buy(bar.symbol, percent=self.position_pct)
 
         # 价格触及上轨：超买，卖出
-        elif current_price >= upper:
-            if has_pos:
-                self.sell(bar.symbol)
+        elif current_price >= upper and has_pos:
+            self.sell(bar.symbol)

@@ -245,3 +245,87 @@ def test_compute_exposes_portfolio_exposure_metrics():
     )
     assert result.max_single_position_weight == pytest.approx(40_000 / 100_000, abs=1e-6)
     assert result.avg_top5_concentration == pytest.approx(result.average_exposure, abs=1e-6)
+
+
+def test_compute_exposes_metadata_exposure_and_slippage_cost():
+    equity = pd.Series(
+        [100_000.0, 101_000.0],
+        index=[date(2024, 1, 2), date(2024, 1, 3)],
+    )
+    account_history = {
+        date(2024, 1, 2): AccountSnapshot(
+            cash=40_000.0,
+            positions={
+                "AAA": PositionSnapshot(
+                    symbol="AAA",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=300.0,
+                    last_price=300.0,
+                    market_value=30_000.0,
+                    unrealized_pnl=0.0,
+                ),
+                "BBB": PositionSnapshot(
+                    symbol="BBB",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=300.0,
+                    last_price=300.0,
+                    market_value=30_000.0,
+                    unrealized_pnl=0.0,
+                ),
+            },
+            total_assets=100_000.0,
+            total_market_value=60_000.0,
+        ),
+        date(2024, 1, 3): AccountSnapshot(
+            cash=51_000.0,
+            positions={
+                "AAA": PositionSnapshot(
+                    symbol="AAA",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=300.0,
+                    last_price=300.0,
+                    market_value=50_000.0,
+                    unrealized_pnl=0.0,
+                ),
+            },
+            total_assets=101_000.0,
+            total_market_value=50_000.0,
+        ),
+    }
+    metadata = pd.DataFrame(
+        [
+            {"symbol": "AAA", "industry": "消费", "market_cap": 500_000_000_000, "style": "quality"},
+            {"symbol": "BBB", "industry": "金融", "market_cap": 50_000_000_000, "style": "value"},
+        ]
+    )
+
+    result = PerformanceMetrics().compute(
+        equity,
+        trades=[],
+        account_history=account_history,
+        position_metadata=metadata,
+        slippage_costs={"T1": 12.5, "T2": 7.5},
+    )
+
+    assert result.total_slippage_cost == 20.0
+    assert result.cost_drag == pytest.approx(20.0 / 100_000, abs=1e-6)
+    assert result.industry_exposure["消费"] == pytest.approx((0.3 + 50_000 / 101_000) / 2, abs=1e-6)
+    assert result.industry_exposure["金融"] == pytest.approx(0.3 / 2, abs=1e-6)
+    assert result.market_cap_exposure
+    assert result.style_exposure["quality"] > result.style_exposure["value"]
+    assert result.exposure_diagnostics["status"] == "available"
+
+
+def test_compute_marks_metadata_exposure_unavailable_without_metadata():
+    equity = pd.Series(
+        [100_000.0, 101_000.0],
+        index=[date(2024, 1, 2), date(2024, 1, 3)],
+    )
+
+    result = PerformanceMetrics().compute(equity, trades=[], account_history={})
+
+    assert result.industry_exposure == {}
+    assert result.exposure_diagnostics["status"] == "unavailable"

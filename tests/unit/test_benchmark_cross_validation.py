@@ -11,6 +11,7 @@ from cq.benchmark import (
     CrossValidationTolerance,
     compare_benchmark_with_external,
     export_cross_validation_result,
+    export_cross_validation_template,
     load_cross_validation_frames,
 )
 from scripts.run_cross_validation import main as run_cross_validation_main
@@ -111,6 +112,28 @@ def test_export_cross_validation_result_writes_standard_files(tmp_path):
     assert payload["passed"] is True
     assert payload["schema_version"] == "cross_validation.v1"
     assert exported.files["report"].read_text(encoding="utf-8").startswith("# 平台交叉验证报告")
+
+
+def test_export_cross_validation_template_writes_required_contract_files(tmp_path):
+    exported = export_cross_validation_template(tmp_path, platform_name="JoinQuant")
+
+    assert set(exported.files) == {
+        "equity_curve",
+        "holdings",
+        "trades",
+        "assumptions",
+        "readme",
+    }
+    assert pd.read_csv(exported.files["equity_curve"]).columns.tolist() == [
+        "date",
+        "total_assets",
+        "cash",
+        "position_value",
+    ]
+    assumptions = json.loads(exported.files["assumptions"].read_text(encoding="utf-8"))
+    assert assumptions["schema_version"] == "cross_validation_template.v1"
+    assert assumptions["platform_name"] == "JoinQuant"
+    assert "adjustment_mode" in assumptions["must_record"]
 
 
 def test_load_cross_validation_frames_standardizes_common_platform_aliases(tmp_path):

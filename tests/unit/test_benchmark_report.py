@@ -73,6 +73,31 @@ def test_generate_benchmark_report_contains_metrics_and_field_mapping():
     assert report.markdown.endswith("\n")
 
 
+def test_generate_benchmark_report_renders_universe_source_metadata():
+    result = _benchmark_result()
+
+    report = generate_benchmark_report(
+        result,
+        universe="HS300_PIT",
+        metadata={
+            "universe_source": {
+                "provider": "akshare",
+                "source_quality": "free_best_effort_latest_snapshot",
+                "strict_historical_pit": False,
+                "effective_coverage_start": "2026-04-30",
+                "snapshot_dates": {"hs300_pit": "2026-04-30"},
+            },
+            "universe_quality_warning": "PIT universe source is best-effort/latest snapshot.",
+        },
+    )
+
+    assert "| 股票池数据源 | akshare |" in report.markdown
+    assert "| 股票池数据质量 | free_best_effort_latest_snapshot |" in report.markdown
+    assert "| 严格历史 PIT | 否 |" in report.markdown
+    assert "| 有效覆盖起点 | 2026-04-30 |" in report.markdown
+    assert "| 股票池质量警告 | PIT universe source is best-effort/latest snapshot. |" in report.markdown
+
+
 def test_export_benchmark_result_writes_standard_files(tmp_path):
     result = _benchmark_result()
 

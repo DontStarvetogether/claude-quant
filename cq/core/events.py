@@ -12,10 +12,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 from enum import IntEnum
-from typing import Optional
 
 from cq.core.models import Bar, Order, Signal, Trade
-
 
 # ── 优先级 ───────────────────────────────────────────────────────────────────
 
@@ -40,7 +38,7 @@ class Event:
         self.timestamp = timestamp
         self.priority = priority
 
-    def __lt__(self, other: "Event") -> bool:
+    def __lt__(self, other: Event) -> bool:
         if self.priority != other.priority:
             return self.priority < other.priority
         return self.timestamp < other.timestamp
@@ -57,7 +55,7 @@ class Event:
 class BarEvent(Event):
     __slots__ = ("bar",)
 
-    def __init__(self, bar: Bar, timestamp: Optional[datetime] = None) -> None:
+    def __init__(self, bar: Bar, timestamp: datetime | None = None) -> None:
         ts = timestamp or datetime.combine(bar.trade_date, time(9, 30))
         super().__init__(ts, EventPriority.MARKET_DATA)
         self.bar = bar
@@ -66,7 +64,7 @@ class BarEvent(Event):
 class SignalEvent(Event):
     __slots__ = ("signal",)
 
-    def __init__(self, signal: Signal, timestamp: Optional[datetime] = None) -> None:
+    def __init__(self, signal: Signal, timestamp: datetime | None = None) -> None:
         ts = timestamp or signal.created_at or datetime.now()
         super().__init__(ts, EventPriority.SIGNAL)
         self.signal = signal
@@ -75,7 +73,7 @@ class SignalEvent(Event):
 class OrderEvent(Event):
     __slots__ = ("order",)
 
-    def __init__(self, order: Order, timestamp: Optional[datetime] = None) -> None:
+    def __init__(self, order: Order, timestamp: datetime | None = None) -> None:
         ts = timestamp or order.created_at or datetime.now()
         super().__init__(ts, EventPriority.ORDER)
         self.order = order
@@ -84,7 +82,7 @@ class OrderEvent(Event):
 class FillEvent(Event):
     __slots__ = ("trade",)
 
-    def __init__(self, trade: Trade, timestamp: Optional[datetime] = None) -> None:
+    def __init__(self, trade: Trade, timestamp: datetime | None = None) -> None:
         ts = timestamp or trade.trade_time
         super().__init__(ts, EventPriority.FILL)
         self.trade = trade
@@ -97,7 +95,7 @@ class RejectEvent(Event):
         self,
         order_id: str,
         reason: str,
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
     ) -> None:
         ts = timestamp or datetime.now()
         super().__init__(ts, EventPriority.FILL)
@@ -109,7 +107,7 @@ class EndOfDayEvent(Event):
     __slots__ = ("trade_date",)
 
     def __init__(
-        self, trade_date: date, timestamp: Optional[datetime] = None
+        self, trade_date: date, timestamp: datetime | None = None
     ) -> None:
         ts = timestamp or datetime.combine(trade_date, time(15, 0))
         super().__init__(ts, EventPriority.EOD)

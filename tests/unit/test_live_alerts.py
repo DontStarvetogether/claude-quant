@@ -7,8 +7,10 @@ from cq.live import (
     AlertEvent,
     AlertLevel,
     AlertManager,
+    FeishuAlertSink,
     InMemoryAlertSink,
     JsonlAlertSink,
+    WeComAlertSink,
     WebhookAlertSink,
 )
 
@@ -96,3 +98,38 @@ def test_webhook_alert_sink_posts_json_payload(monkeypatch):
     assert captured["headers"]["X-test"] == "yes"
     assert captured["payload"]["text"] == "[WARNING] Risk warning\ncash below target"
     assert captured["payload"]["event"]["session_id"] == "session-1"
+
+
+def test_feishu_and_wecom_alert_sinks_format_platform_payloads(monkeypatch):
+    payloads = []
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b"ok"
+
+    def fake_urlopen(request, timeout):
+        payloads.append(json.loads(request.data.decode("utf-8")))
+        return _Response()
+
+    monkeypatch.setattr("cq.live.alerts.urlopen", fake_urlopen)
+    event = AlertEvent(
+        level=AlertLevel.ERROR,
+        title="Session failed",
+        message="broker disconnected",
+        session_id="session-1",
+        created_at=datetime(2024, 1, 2, 9, 30),
+    )
+
+    FeishuAlertSink("https://example.test/feishu").send(event)
+    WeComAlertSink("https://example.test/wecom").send(event)
+
+    assert payloads[0]["msg_type"] == "interactive"
+    assert payloads[0]["card"]["header"]["title"]["content"] == "[ERROR] Session failed"
+    assert payloads[1]["msgtype"] == "markdown"
+    assert "broker disconnected" in payloads[1]["markdown"]["content"]

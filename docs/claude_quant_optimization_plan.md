@@ -9,40 +9,44 @@
 
 | 模块 | 状态 | 证据 / 备注 |
 |---|---|---|
-| Phase 0 项目基线整理 | 已完成初版 | Python 已锁定 `>=3.11,<3.13`；GitHub Actions 已跑 `tests/unit tests/integration`；`pandas-ta` 已移入可选依赖；新增 `docs/dev_guide.md`；`.gitignore` 已覆盖常见产物 |
+| Phase 0 项目基线整理 | 已完成增强版 | Python 已锁定 `>=3.11,<3.13`；GitHub Actions 已跑 `tests/unit tests/integration`；新增统一 `cq` CLI 入口；`ruff check cq web/routers scripts` 已作为当前 lint 基线通过；README/dev guide/architecture 已同步当前实现；`docs/type_debt.md` 已记录 mypy strict 债务 |
 | Phase 1.1 T+1 卖出语义 | 已完成初版 | `PreTradeRisk` 信号日按 `total_qty` 允许生成次日卖单，撮合日再由 `BarMatchingEngine` 按 `tradeable_qty` 最终检查；已有集成测试覆盖 D+1 买入后 D+2 可卖，并纳入 CI |
 | Phase 1.2 A 股涨跌停规则 | 已完成初版 | 已集中到 `cq/utils/trading_rules.py::AStockRules`，覆盖主板、ST、创业板、科创板、北交所；`HistoricalFeed` 缺涨跌停字段时也用统一规则从 `pre_close` 计算 |
 | Phase 1.3 成交拒单诊断 | 已完成初版 | 回测结果已输出 `execution_diagnostics`，结果页展示拒单分类、成交比例、容量限制等 |
 | Phase 1.4 撮合当日行情隔离 | 已完成初版 | `BarMatchingEngine` 已按交易日清空 bar 缓存，并在撮合时校验 `bar.trade_date == today`，防止缺失行情时误用旧 bar 成交 |
 | Phase 2.1 换手率指标 | 已完成初版 | `PerformanceMetrics` 已输出日均/年化/最大/买入/卖出换手率，结果页已展示 |
 | Phase 2.2 成本前后收益 | 已完成初版 | 已输出 `gross_return/net_return/gross_annual_return/net_annual_return/cost_drag/cost_to_nav` 等 |
-| Phase 2.3 组合暴露指标 | 已完成初版 | 已输出平均持仓数、现金占比、最大单票、Top5 集中度；行业/市值暴露未做 |
-| Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记 |
-| Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告，并支持 CSV/JSON/Markdown 标准导出；`scripts/run_factor_report.py` 可从 CSV 生成报告 |
-| Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
-| Phase 5 股票池体系升级 | 已完成初版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；PIT 可从 CSV/DataFrame 按日期解析，真实指数历史成分股数据接入待做 |
-| Phase 6 平台交叉验证 | 已完成增强版初版 | 已新增 `cq/benchmark/cross_validation.py`、`scripts/run_cross_validation.py` 和 `docs/cross_validation_report.md`；可从本地/外部平台 CSV 直接加载、标准化常见字段别名、比较每日净值/持仓/成交并导出差异报告；真实外部平台样本对账待执行 |
-| Phase 7 模拟盘 / 实盘安全层 | 已完成增强版初版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报和异常报警通道；安全层、恢复状态、会话结束日报已接入 `LiveEngine` / `paper_trade` / Web 会话链路，并提供恢复状态和日报查询/列表 API；已补通用 Webhook 报警 sink；真实通知模板和 Web 配置入口仍待做 |
+| Phase 2.3 组合暴露指标 | 已完成增强版 | 已输出平均持仓数、现金占比、最大单票、Top5 集中度；新增可选行业/市值/风格暴露输入，无元数据时输出 unavailable 诊断 |
+| Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记；2026-05-23 使用 Chrome DevTools MCP 验证首页、策略库、数据管理、策略对比、交易页、结果页和关键 API，并提交短回测确认 `run/status/result` 链路完成；首页和策略对比页默认结束日已改为优先使用本地最新行情日，避免周末/非交易日默认跑到无数据日期 |
+| Phase 3 因子研究模块 | 已完成增强版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告，并支持 CSV/JSON/Markdown 标准导出；`cq factor-report` 支持样本内/样本外切分诊断 |
+| Phase 4 标准 Benchmark 策略 | 已完成增强版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；`cq benchmark` 可导出 `config.json/equity_curve/holdings/trades/signals/summary/report` 可复现实验包，并支持 PIT 股票池逐日过滤；Markdown 报告会渲染股票池来源、数据质量、快照日期和质量警告；已补报告渲染单测 |
+| Phase 5 股票池体系升级 | 已完成增强版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；新增 `cq import-pit-universe` 标准化 PIT CSV、诊断 JSON 和 benchmark 逐日 PIT 过滤；新增 `cq validate-pit-universe` 输出 PIT 校验 JSON/CSV/Markdown；新增 `cq fetch-pit-universe --provider akshare`，可用免费 AkShare / 中证公开接口下载三大宽基最新成分和权重快照；新增 `cq fetch-pit-universe --provider tushare`，可按月下载 Tushare `index_weight` 并生成严格历史成分区间和权重快照；fetch 会写出 `pit_fetch_summary.json`、`pit_fetch_report.md` 和 PIT CSV 同名 sidecar，记录 provider、数据质量、快照日期和 `effective_coverage_start`；`cq benchmark` 会自动读取 sidecar 并写入 `universe_source` / `universe_quality_warning`；AkShare 路径标记为 best-effort 当前快照，不能替代严格历史 PIT |
+| Phase 6 平台交叉验证 | 已完成增强版 | 已新增 `cq/benchmark/cross_validation.py`、`scripts/run_cross_validation.py`、`cq cross-validate` 和 `docs/cross_validation_report.md`；可从本地/外部平台 CSV 直接加载、标准化常见字段别名、比较每日净值/持仓/成交并导出差异报告；新增 `cq cross-validation-template` 生成外部平台导出模板和假设记录文件；真实外部平台样本对账待执行 |
+| Phase 7 模拟盘 / 实盘安全层 | 已完成增强版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、`TradePlanStore`、交易计划创建/审批/拒绝 API、实盘启动已批准计划门禁、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报、通用/飞书/企微 Webhook 报警 sink；交易页已展示交易计划、恢复状态、交易日报 |
 
 ## 下一步优化动作
 
-当前代码侧的框架能力已完成一轮，下一步不要继续空转新增抽象，优先补“真实样本”和“人工确认链路”：
+当前代码侧的框架能力已完成增强版，下一步不要继续空转新增抽象，优先补“真实样本”和“外部对账”：
 
 1. **Phase 5：接入真实 PIT 指数成分股数据**
-   - 当前 `PointInTimeUniverseProvider` 已能读取 CSV/DataFrame 生效区间
-   - 下一步需要落地真实 `HS300_PIT` / `ZZ500_PIT` / `ZZ1000_PIT` 历史成分股文件
-   - 验收重点是避免幸存者偏差，并在 benchmark / 回测中能按交易日解析成分股
+   - 当前 `PointInTimeUniverseProvider` 和 `cq import-pit-universe` 已能读取并标准化 CSV/DataFrame 生效区间
+   - 当前 `cq validate-pit-universe` 已能在真实文件接入前检查缺失股票池、区间重叠、覆盖日期为空和最小成分股阈值
+   - 当前 `cq fetch-pit-universe --provider akshare` 已能免费下载中证公开最新成分和权重快照，保存 raw 文件、标准 PIT CSV、权重快照、`pit_fetch_summary.json`、`pit_fetch_report.md` 和 PIT CSV 同名 sidecar；该路径适合 bootstrap 和横向校验，但不是严格历史 PIT
+   - 当前 `cq fetch-pit-universe --provider tushare` 已能按月下载 Tushare `index_weight`，保存 raw 文件、标准 PIT 成分区间和权重快照
+   - 已补 AkShare fetch 产物直接接入 `cq benchmark` 的链路测试；benchmark 会自动读取 PIT sidecar，把免费快照来源和质量警告写入实验包
+   - 下一步可在用户允许联网时执行真实 AkShare 三大宽基下载并用本地价格 CSV 跑 benchmark smoke；如要避免幸存者偏差，再补 Tushare / JoinQuant / RiceQuant 历史成分数据
+   - 验收重点是 `HS300_PIT` / `ZZ500_PIT` / `ZZ1000_PIT` 免费快照校验 PASS，并明确报告其 `effective_coverage_start`；严格历史回测仍需历史 PIT 文件
 
 2. **Phase 6：执行真实外部平台对账**
-   - 当前 `scripts/run_cross_validation.py` 已能读取本地和外部平台 CSV
-   - 下一步需要准备 JoinQuant / RiceQuant / QMT 任一平台同策略导出样本
+   - 当前 `cq benchmark` 可生成本地实验包，`cq cross-validate` 已能读取本地和外部平台 CSV
+   - 当前 `cq cross-validation-template` 可生成外部平台导出 CSV 契约和复权/费用/成交假设记录文件
+   - 下一步需要准备 JoinQuant / RiceQuant / QMT 任一平台同策略导出样本，按模板落地到目录
    - 验收重点是形成一份真实 `cross_validation_report.md`，并把净值、持仓、成交差异逐项归因
 
-3. **Phase 7：补 Web 实盘人工确认和恢复展示**
-   - `TradePlan` 已有 pending / approved / rejected 状态，但 Web 下单前确认流程未接入
-   - `LiveRecoveryStore` 已接入 Web 启动链路、单会话查询和列表 API，但缺前端展示
-   - 每日交易日报已自动导出并接入单会话查询和列表 API，但缺前端页面入口
-   - 异常报警已有 JSONL / memory / 通用 Webhook sink，但还缺企业微信 / 飞书 / 邮件模板和 Web 配置入口
+3. **Phase 8：真实小资金实盘前演练**
+   - 使用真实 PIT 股票池和外部平台对账报告锁定 benchmark 行为
+   - 用模拟盘跑完整 `TradePlan → approve → live start gate → recovery/report/alert` 链路
+   - 验收重点是形成实盘前检查清单、异常演练记录和回滚流程
 
 ## 进度更新约定
 

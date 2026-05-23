@@ -13,7 +13,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from loguru import logger
@@ -33,29 +33,29 @@ class SymbolUpdateDiagnostic:
     status: str
     new_records: int
     used_cache: bool
-    local_first_date: Optional[str]
-    local_last_date: Optional[str]
+    local_first_date: str | None
+    local_last_date: str | None
     requested_start: str
     requested_end: str
-    error: Optional[str] = None
-    list_date: Optional[str] = None
+    error: str | None = None
+    list_date: str | None = None
     coverage_status: str = "unknown"
-    source: Optional[str] = None
-    cache_path: Optional[str] = None
-    cache_updated_at: Optional[str] = None
-    raw_first_date: Optional[str] = None
-    raw_last_date: Optional[str] = None
-    qfq_first_date: Optional[str] = None
-    qfq_last_date: Optional[str] = None
-    factor_first_date: Optional[str] = None
-    factor_last_date: Optional[str] = None
+    source: str | None = None
+    cache_path: str | None = None
+    cache_updated_at: str | None = None
+    raw_first_date: str | None = None
+    raw_last_date: str | None = None
+    qfq_first_date: str | None = None
+    qfq_last_date: str | None = None
+    factor_first_date: str | None = None
+    factor_last_date: str | None = None
     qfq_available: bool = False
     factor_available: bool = False
     st_status_source: str = "unavailable"
     limit_price_source: str = "exchange_or_calculated"
     repair_actions: list[str] = field(default_factory=list)
     quality_level: str = "unknown"
-    data_quality: Optional[dict[str, Any]] = None
+    data_quality: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -78,8 +78,8 @@ class DataPipeline:
     def update_symbol(
         self,
         symbol: str,
-        end_date: Optional[date] = None,
-        start_date: Optional[date] = None,
+        end_date: date | None = None,
+        start_date: date | None = None,
         force: bool = False,
     ) -> int:
         """增量更新单只股票数据，返回新增 bar 数量。"""
@@ -93,8 +93,8 @@ class DataPipeline:
     def update_symbol_diagnostic(
         self,
         symbol: str,
-        end_date: Optional[date] = None,
-        start_date: Optional[date] = None,
+        end_date: date | None = None,
+        start_date: date | None = None,
         force: bool = False,
     ) -> SymbolUpdateDiagnostic:
         """
@@ -126,10 +126,7 @@ class DataPipeline:
 
         # ── 情况 1：无本地数据 或 强制重下 ─────────────────────────────────────
         if local_max is None or force:
-            if start_date is not None:
-                start = start_date
-            else:
-                start = list_date or date(2000, 1, 1)
+            start = start_date if start_date is not None else list_date or date(2000, 1, 1)
 
             result = self._download_range_diagnostic(symbol, start, end_date, recalc_qfq=force)
             total_new += result["new_records"]
@@ -321,8 +318,8 @@ class DataPipeline:
     def update_batch(
         self,
         symbols: list[str],
-        end_date: Optional[date] = None,
-        start_date: Optional[date] = None,
+        end_date: date | None = None,
+        start_date: date | None = None,
         max_workers: int = 8,
         force: bool = False,
     ) -> dict[str, int]:
@@ -349,8 +346,8 @@ class DataPipeline:
     def update_batch_diagnostic(
         self,
         symbols: list[str],
-        end_date: Optional[date] = None,
-        start_date: Optional[date] = None,
+        end_date: date | None = None,
+        start_date: date | None = None,
         max_workers: int = 8,
         force: bool = False,
     ) -> dict[str, SymbolUpdateDiagnostic]:
@@ -389,7 +386,7 @@ class DataPipeline:
     def sync_calendar(
         self,
         exchange: str = "SSE",
-        years: Optional[list[int]] = None,
+        years: list[int] | None = None,
     ) -> None:
         """同步交易日历。"""
         if years is None:

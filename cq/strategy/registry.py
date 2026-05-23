@@ -8,7 +8,6 @@ from typing import Any
 
 from cq.strategy.base import Strategy
 
-
 BUILTIN_STRATEGIES: dict[str, str] = {
     "double_ma": "cq.strategy.examples.double_ma.DoubleMaStrategy",
     "rsi": "cq.strategy.examples.rsi.RsiStrategy",

@@ -10,7 +10,6 @@ from datetime import date
 
 from loguru import logger
 
-from cq.core.events import RejectEvent, SignalEvent
 from cq.core.models import OrderSide, Signal
 from cq.engine.portfolio import PortfolioManager
 from cq.utils.config import EngineConfig, RiskConfig

@@ -21,8 +21,6 @@
 
 from __future__ import annotations
 
-import pandas as pd
-
 from cq.core.models import Bar
 from cq.strategy.base import Strategy
 from cq.utils.trading_rules import AStockRules
@@ -64,6 +62,5 @@ class MomentumStrategy(Strategy):
                 self.buy(bar.symbol, percent=self.position_pct)
 
         # 弱势离场
-        elif momentum < self.sell_threshold:
-            if has_pos:
-                self.sell(bar.symbol)
+        elif momentum < self.sell_threshold and has_pos:
+            self.sell(bar.symbol)

@@ -22,8 +22,17 @@ from cq.core.events import BarEvent, EndOfDayEvent, FillEvent
 from cq.core.models import OrderSide, Trade
 from cq.data.store.parquet_store import ParquetStore
 from cq.live import (
+    AlertLevel,
+    AlertManager,
+    DailyLossGuard,
+    FeishuAlertSink,
+    KillSwitch,
+    JsonlAlertSink,
     LiveRecoveryStore,
     OrderIdempotencyStore,
+    TradePlanStore,
+    WeComAlertSink,
+    WebhookAlertSink,
     export_daily_trading_report,
     generate_daily_trading_report,
 )
@@ -138,6 +147,11 @@ def start_live_session(
     risk_params: dict[str, Any],
     account_id: str,
     mini_qmt_dir: str | None = None,
+    trade_plan_id: str | None = None,
+    kill_switch_enabled: bool | None = None,
+    kill_switch_reason: str | None = None,
+    daily_loss_limit_pct: float | None = None,
+    daily_loss_limit_amount: float | None = None,
     config_path: str = "config/local.yaml",
 ) -> LiveSession:
     """启动实盘会话，返回 LiveSession。"""
@@ -163,7 +177,19 @@ def start_live_session(
 
     t = threading.Thread(
         target=_run_live,
-        args=(session, account_id, mini_qmt_dir, strategy_params, risk_params, config_path),
+        args=(
+            session,
+            account_id,
+            mini_qmt_dir,
+            strategy_params,
+            risk_params,
+            config_path,
+            trade_plan_id,
+            kill_switch_enabled,
+            kill_switch_reason,
+            daily_loss_limit_pct,
+            daily_loss_limit_amount,
+        ),
         daemon=True,
         name=f"live-real-{session_id}",
     )
@@ -191,6 +217,11 @@ def _configure_engine_state(
     session: LiveSession,
     *,
     account_id: str | None = None,
+    trade_plan_id: str | None = None,
+    kill_switch_enabled: bool | None = None,
+    kill_switch_reason: str | None = None,
+    daily_loss_limit_pct: float | None = None,
+    daily_loss_limit_amount: float | None = None,
 ) -> None:
     """Configure persistent safety/recovery state for Web-started sessions."""
     state_root = config.data.root_path / "live_state"
@@ -198,7 +229,23 @@ def _configure_engine_state(
         state_root / "idempotency" / f"{session.session_id}.json"
     )
     recovery_store = LiveRecoveryStore(state_root / "recovery")
-    engine.configure_safety(idempotency_store=idempotency_store)
+    safety_cfg = config.live_safety
+    kill_enabled = safety_cfg.kill_switch_enabled if kill_switch_enabled is None else kill_switch_enabled
+    kill_reason = safety_cfg.kill_switch_reason if kill_switch_reason is None else kill_switch_reason
+    loss_pct = safety_cfg.daily_loss_limit_pct if daily_loss_limit_pct is None else daily_loss_limit_pct
+    loss_amount = (
+        safety_cfg.daily_loss_limit_amount
+        if daily_loss_limit_amount is None
+        else daily_loss_limit_amount
+    )
+    engine.configure_safety(
+        idempotency_store=idempotency_store,
+        kill_switch=KillSwitch(enabled=kill_enabled, reason=kill_reason),
+        daily_loss_guard=DailyLossGuard(
+            max_loss_pct=loss_pct,
+            max_loss_amount=loss_amount,
+        ),
+    )
     engine.configure_recovery(
         recovery_store=recovery_store,
         session_id=session.session_id,
@@ -208,7 +255,9 @@ def _configure_engine_state(
             "symbols": list(session.symbols),
             "account_id": account_id or "",
             "started_at": session.started_at.isoformat(),
+            "trade_plan_id": trade_plan_id or "",
         },
+        pending_plan_ids=(trade_plan_id,) if trade_plan_id else (),
     )
 
 
@@ -216,6 +265,7 @@ def _export_session_daily_report(
     config: Config,
     session: LiveSession,
     alerts: list[str] | None = None,
+    alert_manager: AlertManager | None = None,
 ) -> None:
     """Export a daily report for a finished Web live/paper session."""
     try:
@@ -232,6 +282,14 @@ def _export_session_daily_report(
         export_daily_trading_report(report, output_dir)
     except Exception as exc:
         logger.warning(f"导出每日交易日报失败 session={session.session_id}: {exc}")
+        if alert_manager is not None:
+            alert_manager.send(
+                level=AlertLevel.WARNING,
+                title="交易日报导出失败",
+                message=str(exc),
+                source="web.live_runner",
+                session_id=session.session_id,
+            )
 
 
 def load_recovery_snapshot(
@@ -307,6 +365,26 @@ def list_daily_report_snapshots(config_path: str = "config/local.yaml") -> list[
     return reports
 
 
+def get_trade_plan_store(config_path: str = "config/local.yaml") -> TradePlanStore:
+    """Return the persistent trade plan store for Web APIs."""
+    config = Config.from_yaml(config_path)
+    return TradePlanStore(config.data.root_path / "live_state" / "plans")
+
+
+def _build_alert_manager(config: Config) -> AlertManager | None:
+    sinks = []
+    alerts = config.live_alerts
+    if alerts.jsonl_path:
+        sinks.append(JsonlAlertSink(Path(alerts.jsonl_path).expanduser()))
+    if alerts.webhook_url:
+        sinks.append(WebhookAlertSink(alerts.webhook_url))
+    if alerts.feishu_webhook_url:
+        sinks.append(FeishuAlertSink(alerts.feishu_webhook_url))
+    if alerts.wecom_webhook_url:
+        sinks.append(WeComAlertSink(alerts.wecom_webhook_url))
+    return AlertManager(sinks) if sinks else None
+
+
 def _run_paper(
     session: LiveSession,
     start_date: str,
@@ -317,8 +395,10 @@ def _run_paper(
 ) -> None:
     """在独立线程中执行模拟盘（同步阻塞）。"""
     session._start_time = time.monotonic()
+    alert_manager: AlertManager | None = None
     try:
         config = Config.from_yaml(config_path)
+        alert_manager = _build_alert_manager(config)
         config.engine.initial_capital = session.initial_capital
         config.risk.max_position_pct = risk_params.get("max_position_pct", 0.20)
         config.risk.min_cash_reserve = risk_params.get("min_cash_reserve", 0.05)
@@ -372,7 +452,7 @@ def _run_paper(
             positions_json=_serialize_positions(session),
             metrics_json=metrics_json,
         )
-        _export_session_daily_report(config, session)
+        _export_session_daily_report(config, session, alert_manager=alert_manager)
         logger.info(f"模拟盘结束 session={session.session_id}")
 
     except Exception as e:
@@ -387,6 +467,14 @@ def _run_paper(
                                  elapsed_seconds=session.elapsed_seconds,
                                  positions_json=_serialize_positions(session),
                                  metrics_json=metrics_json)
+        if alert_manager is not None:
+            alert_manager.send(
+                level=AlertLevel.ERROR,
+                title="模拟盘会话异常",
+                message=str(e),
+                source="web.live_runner",
+                session_id=session.session_id,
+            )
         logger.error(f"模拟盘异常 session={session.session_id}: {e}")
 
 
@@ -397,11 +485,18 @@ def _run_live(
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
     config_path: str,
+    trade_plan_id: str | None,
+    kill_switch_enabled: bool | None,
+    kill_switch_reason: str | None,
+    daily_loss_limit_pct: float | None,
+    daily_loss_limit_amount: float | None,
 ) -> None:
     """在独立线程中执行实盘交易（同步阻塞）。"""
     session._start_time = time.monotonic()
+    alert_manager: AlertManager | None = None
     try:
         config = Config.from_yaml(config_path)
+        alert_manager = _build_alert_manager(config)
         config.engine.initial_capital = session.initial_capital
         config.risk.max_position_pct = risk_params.get("max_position_pct", 0.20)
         config.risk.min_cash_reserve = risk_params.get("min_cash_reserve", 0.05)
@@ -414,7 +509,17 @@ def _run_live(
         strategy = load_strategy(session.strategy_id, strategy_params)
 
         engine = LiveEngine(config)
-        _configure_engine_state(engine, config, session, account_id=account_id)
+        _configure_engine_state(
+            engine,
+            config,
+            session,
+            account_id=account_id,
+            trade_plan_id=trade_plan_id,
+            kill_switch_enabled=kill_switch_enabled,
+            kill_switch_reason=kill_switch_reason,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            daily_loss_limit_amount=daily_loss_limit_amount,
+        )
         engine.add_strategy(strategy, symbols=session.symbols)
         session.engine = engine
 
@@ -451,7 +556,7 @@ def _run_live(
             positions_json=_serialize_positions(session),
             metrics_json=metrics_json,
         )
-        _export_session_daily_report(config, session)
+        _export_session_daily_report(config, session, alert_manager=alert_manager)
         logger.info(f"实盘结束 session={session.session_id}")
 
     except Exception as e:
@@ -466,6 +571,14 @@ def _run_live(
                                  elapsed_seconds=session.elapsed_seconds,
                                  positions_json=_serialize_positions(session),
                                  metrics_json=metrics_json)
+        if alert_manager is not None:
+            alert_manager.send(
+                level=AlertLevel.ERROR,
+                title="实盘会话异常",
+                message=str(e),
+                source="web.live_runner",
+                session_id=session.session_id,
+            )
         logger.error(f"实盘异常 session={session.session_id}: {e}")
 
 

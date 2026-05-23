@@ -7,10 +7,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from datetime import date, timedelta
-from typing import Optional
-
-from loguru import logger
+from datetime import date
 
 
 class TradingCalendar:

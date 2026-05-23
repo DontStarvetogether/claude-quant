@@ -136,7 +136,7 @@
             QMT 券商配置
             <span class="text-red-400 text-xs ml-2">* 实盘必填</span>
           </summary>
-          <div class="px-4 pb-4 pt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div class="px-4 pb-4 pt-2 grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div>
               <label class="block text-xs text-gray-500 mb-1">资金账号 <span class="text-red-400">*</span></label>
               <input id="qmt-account-id" type="text" placeholder="如 1234567890"
@@ -145,6 +145,11 @@
             <div>
               <label class="block text-xs text-gray-500 mb-1">QMT 数据目录</label>
               <input id="qmt-dir" type="text" placeholder="C:/国金证券QMT交易端/userdata_mini"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">已批准交易计划ID <span class="text-red-400">*</span></label>
+              <input id="trade-plan-id" type="text" placeholder="plan-..."
                 class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
             </div>
           </div>
@@ -263,6 +268,47 @@
 
     </div>
 
+    <!-- 实盘安全与恢复 -->
+    <section id="safety-section" class="mt-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div class="border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-300">交易计划</h3>
+          <button id="refresh-plans-btn" type="button" class="text-xs text-blue-400 hover:text-blue-300">刷新</button>
+        </div>
+        <div id="trade-plans-list" class="divide-y divide-gray-800">
+          <p class="px-4 py-4 text-sm text-gray-600">暂无待确认计划</p>
+        </div>
+      </div>
+
+      <div class="border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-300">恢复状态</h3>
+          <button id="refresh-recovery-btn" type="button" class="text-xs text-blue-400 hover:text-blue-300">刷新</button>
+        </div>
+        <div id="recovery-list" class="divide-y divide-gray-800">
+          <p class="px-4 py-4 text-sm text-gray-600">暂无恢复快照</p>
+        </div>
+      </div>
+
+      <div class="border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-300">交易日报</h3>
+          <button id="refresh-reports-btn" type="button" class="text-xs text-blue-400 hover:text-blue-300">刷新</button>
+        </div>
+        <div id="daily-reports-list" class="divide-y divide-gray-800">
+          <p class="px-4 py-4 text-sm text-gray-600">暂无日报</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="daily-report-detail" class="hidden mt-6 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-300">日报详情</h3>
+        <button id="close-report-detail-btn" type="button" class="text-xs text-gray-500 hover:text-gray-300">关闭</button>
+      </div>
+      <pre id="daily-report-markdown" class="whitespace-pre-wrap text-xs text-gray-300 p-4 overflow-x-auto max-h-[420px]"></pre>
+    </section>
+
     <!-- 历史会话 -->
     <section class="mt-8">
       <h3 class="text-sm font-semibold text-gray-300 mb-3">历史会话</h3>
@@ -273,6 +319,6 @@
 
   </main>
 
-  <script src="/static/js/live.js?v=30"></script>
+  <script src="/static/js/live.js?v=31"></script>
 </body>
 </html>

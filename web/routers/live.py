@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from cq.core.models import OrderSide, OrderType
+from cq.live import OrderIntent, TradePlan
 from cq.strategy.registry import validate_strategy_params
 from web import db
 from web.live_runner import (
+    get_trade_plan_store,
     list_daily_report_snapshots,
     list_recovery_snapshots,
     live_store,
@@ -28,6 +33,10 @@ from web.schemas import (
     LiveSessionSummary,
     LiveStartRequest,
     LiveStartResponse,
+    TradePlanCreateRequest,
+    TradePlanListResponse,
+    TradePlanResponse,
+    TradePlanReviewRequest,
 )
 
 router = APIRouter(prefix="/api/live", tags=["live"])
@@ -45,6 +54,7 @@ async def start_live(req: LiveStartRequest) -> LiveStartResponse:
         # 实盘模式
         if not req.account_id:
             raise HTTPException(status_code=400, detail="实盘模式需要提供 account_id（QMT 资金账号）")
+        _validate_live_trade_plan(req)
         session = start_live_session(
             strategy_id=req.strategy_id,
             symbols=req.symbols,
@@ -53,6 +63,11 @@ async def start_live(req: LiveStartRequest) -> LiveStartResponse:
             risk_params=req.risk.model_dump(),
             account_id=req.account_id,
             mini_qmt_dir=req.mini_qmt_dir,
+            trade_plan_id=req.trade_plan_id,
+            kill_switch_enabled=req.kill_switch_enabled,
+            kill_switch_reason=req.kill_switch_reason,
+            daily_loss_limit_pct=req.daily_loss_limit_pct,
+            daily_loss_limit_amount=req.daily_loss_limit_amount,
         )
     else:
         # 模拟盘模式
@@ -68,6 +83,74 @@ async def start_live(req: LiveStartRequest) -> LiveStartResponse:
             risk_params=req.risk.model_dump(),
         )
     return LiveStartResponse(session_id=session.session_id, status="starting")
+
+
+@router.post("/plans", response_model=TradePlanResponse, status_code=201)
+async def create_trade_plan(req: TradePlanCreateRequest) -> TradePlanResponse:
+    """创建待人工确认的交易计划。"""
+    plan_id = req.plan_id or f"plan-{uuid.uuid4().hex[:12]}"
+    trade_date = date.fromisoformat(req.trade_date)
+    orders = tuple(
+        OrderIntent(
+            namespace=order.namespace,
+            trade_date=date.fromisoformat(order.trade_date),
+            symbol=order.symbol.upper(),
+            side=OrderSide(order.side),
+            order_type=OrderType(order.order_type),
+            quantity=order.quantity,
+            limit_price=order.limit_price,
+            percent=order.percent,
+            amount=order.amount,
+        )
+        for order in req.orders
+    )
+    plan = TradePlan(
+        plan_id=plan_id,
+        trade_date=trade_date,
+        strategy_id=req.strategy_id,
+        account_id=req.account_id,
+        orders=orders,
+        generated_at=datetime.now(),
+    )
+    store = get_trade_plan_store()
+    store.save(plan)
+    return TradePlanResponse(plan=plan.to_dict())
+
+
+@router.get("/plans", response_model=TradePlanListResponse)
+async def list_trade_plans(status: str | None = None) -> TradePlanListResponse:
+    """列出交易计划。"""
+    store = get_trade_plan_store()
+    return TradePlanListResponse(plans=[plan.to_dict() for plan in store.list_plans(status=status)])
+
+
+@router.get("/plans/{plan_id}", response_model=TradePlanResponse)
+async def get_trade_plan(plan_id: str) -> TradePlanResponse:
+    """查询单个交易计划。"""
+    plan = get_trade_plan_store().load(plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"trade plan {plan_id} 不存在")
+    return TradePlanResponse(plan=plan.to_dict())
+
+
+@router.post("/plans/{plan_id}/approve", response_model=TradePlanResponse)
+async def approve_trade_plan(plan_id: str, req: TradePlanReviewRequest) -> TradePlanResponse:
+    """批准交易计划。"""
+    try:
+        plan = get_trade_plan_store().approve(plan_id, reviewer=req.reviewer)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"trade plan {plan_id} 不存在") from None
+    return TradePlanResponse(plan=plan.to_dict())
+
+
+@router.post("/plans/{plan_id}/reject", response_model=TradePlanResponse)
+async def reject_trade_plan(plan_id: str, req: TradePlanReviewRequest) -> TradePlanResponse:
+    """拒绝交易计划。"""
+    try:
+        plan = get_trade_plan_store().reject(plan_id, reviewer=req.reviewer, reason=req.reason)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"trade plan {plan_id} 不存在") from None
+    return TradePlanResponse(plan=plan.to_dict())
 
 
 @router.post("/{session_id}/stop")
@@ -285,6 +368,24 @@ def _get_elapsed(s: object, d: dict | None = None) -> float:
         except Exception:
             pass
     return 0.0
+
+
+def _validate_live_trade_plan(req: LiveStartRequest) -> None:
+    """Require an approved trade plan for real live sessions by default."""
+    require_plan = req.require_trade_plan if req.require_trade_plan is not None else True
+    if not require_plan:
+        return
+    if not req.trade_plan_id:
+        raise HTTPException(status_code=400, detail="实盘模式需要提供已批准的 trade_plan_id")
+    plan = get_trade_plan_store().load(req.trade_plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"trade plan {req.trade_plan_id} 不存在")
+    if plan.account_id != req.account_id:
+        raise HTTPException(status_code=400, detail="trade_plan_id 的 account_id 与请求不一致")
+    try:
+        plan.require_approved()
+    except PermissionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 def _load_metrics_from_db(session_id: str) -> dict | None:

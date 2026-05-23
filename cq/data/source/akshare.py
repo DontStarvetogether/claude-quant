@@ -17,9 +17,10 @@ akshare 是国内量化社区最常用的免费 A 股数据库，以 EastMoney /
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from datetime import date, datetime
 from functools import wraps
-from typing import Any, Callable, ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -357,7 +358,7 @@ class AkshareSource(DataSource):
         # info_df 格式: columns=['item', 'value'] 或 ['指标', '值']
         item_col = info_df.columns[0]
         val_col = info_df.columns[1]
-        info = dict(zip(info_df[item_col].astype(str), info_df[val_col].astype(str)))
+        info = dict(zip(info_df[item_col].astype(str), info_df[val_col].astype(str), strict=False))
 
         exchange = "SH" if symbol.endswith(".SH") else ("SZ" if symbol.endswith(".SZ") else "BJ")
         board = self._detect_board(code)

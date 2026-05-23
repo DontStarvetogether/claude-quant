@@ -11,8 +11,8 @@ QMTRealtimeFeed：基于迅投 QMT (xtquant) 的实现。
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
 
 from loguru import logger
 
@@ -23,7 +23,7 @@ class RealtimeFeed(ABC):
     """实时行情 Feed 基类。"""
 
     def __init__(self) -> None:
-        self._bar_callback: Optional[Callable[[Bar], None]] = None
+        self._bar_callback: Callable[[Bar], None] | None = None
 
     def set_bar_callback(self, callback: Callable[[Bar], None]) -> None:
         """设置 Bar 到达时的回调函数（在行情线程中调用，注意线程安全）。"""
@@ -46,7 +46,7 @@ class RealtimeFeed(ABC):
         """停止行情接收并取消所有订阅。"""
 
     @abstractmethod
-    def get_latest_bar(self, symbol: str) -> Optional[Bar]:
+    def get_latest_bar(self, symbol: str) -> Bar | None:
         """返回最新一根 Bar，无数据时返回 None。"""
 
 
@@ -136,7 +136,7 @@ class QMTRealtimeFeed(RealtimeFeed):
         self.unsubscribe(list(self._subscribed))
         logger.info("实时行情 Feed 已停止")
 
-    def get_latest_bar(self, symbol: str) -> Optional[Bar]:
+    def get_latest_bar(self, symbol: str) -> Bar | None:
         return self._latest_bars.get(symbol)
 
     # ── 内部方法 ─────────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ class QMTRealtimeFeed(RealtimeFeed):
             if self._bar_callback:
                 self._bar_callback(bar)
 
-    def _parse_bar(self, symbol: str, fields: dict) -> Optional[Bar]:
+    def _parse_bar(self, symbol: str, fields: dict) -> Bar | None:
         """将 QMT 推送的字段字典转为 Bar。"""
         try:
             def last(key: str, default=0):

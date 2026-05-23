@@ -67,9 +67,8 @@ class RsiStrategy(Strategy):
                 self.buy(bar.symbol, percent=self.position_pct)
 
         # 超买卖出
-        elif rsi > self.overbought:
-            if has_pos:
-                self.sell(bar.symbol)
+        elif rsi > self.overbought and has_pos:
+            self.sell(bar.symbol)
 
 
 def _calc_rsi(close: pd.Series, period: int) -> float | None:

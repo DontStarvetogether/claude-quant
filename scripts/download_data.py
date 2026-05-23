@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 # 项目根目录加入 path

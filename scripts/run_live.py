@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import click
@@ -29,17 +29,17 @@ from loguru import logger
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from cq.data.store.parquet_store import ParquetStore
-from cq.strategy.base import Strategy
-from cq.utils.config import Config
+from cq.data.store.parquet_store import ParquetStore  # noqa: E402
+from cq.strategy.base import Strategy  # noqa: E402
+from cq.utils.config import Config  # noqa: E402
 
 
 # ── 已注册的策略（在此处添加你自己的策略）────────────────────────────────────────
 def _get_strategy_registry() -> dict[str, type[Strategy]]:
-    from cq.strategy.examples.double_ma import DoubleMaStrategy
-    from cq.strategy.examples.rsi import RsiStrategy
     from cq.strategy.examples.bollinger import BollingerStrategy
+    from cq.strategy.examples.double_ma import DoubleMaStrategy
     from cq.strategy.examples.momentum import MomentumStrategy
+    from cq.strategy.examples.rsi import RsiStrategy
     return {
         "double_ma": DoubleMaStrategy,
         "rsi":       RsiStrategy,

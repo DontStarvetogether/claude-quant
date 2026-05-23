@@ -44,6 +44,5 @@ class DoubleMaStrategy(Strategy):
                 self.buy(bar.symbol, percent=0.9)
 
         # 死叉卖出（快线下穿慢线）
-        elif curr_fast < curr_slow and prev_fast >= prev_slow:
-            if has_pos:
-                self.sell(bar.symbol)
+        elif curr_fast < curr_slow and prev_fast >= prev_slow and has_pos:
+            self.sell(bar.symbol)

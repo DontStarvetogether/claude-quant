@@ -14,6 +14,7 @@ from cq.live import (
     OrderIdempotencyStore,
     OrderIntent,
     TradePlan,
+    TradePlanStore,
 )
 from cq.risk.pre_trade import PreTradeRisk
 from cq.utils.config import EngineConfig, RiskConfig
@@ -89,6 +90,34 @@ def test_trade_plan_requires_manual_approval():
     rejected = plan.reject("tester", "bad price")
     assert rejected.status == "rejected"
     assert rejected.review_reason == "bad price"
+
+
+def test_trade_plan_store_persists_lists_and_reviews(tmp_path):
+    intent = OrderIntent.from_signal(
+        _signal(),
+        quantity=100,
+        trade_date=date(2024, 1, 2),
+    )
+    plan = TradePlan(
+        plan_id="plan-1",
+        trade_date=date(2024, 1, 2),
+        strategy_id="demo",
+        account_id="paper",
+        orders=(intent,),
+        generated_at=datetime(2024, 1, 2, 15, 0),
+    )
+    store = TradePlanStore(tmp_path)
+
+    store.save(plan)
+    loaded = store.load("plan-1")
+    approved = store.approve("plan-1", reviewer="tester", reviewed_at=datetime(2024, 1, 2, 15, 1))
+    rejected = store.reject("plan-1", reviewer="tester", reason="bad price")
+
+    assert loaded == plan
+    assert approved.status == "approved"
+    assert approved.to_dict()["orders"][0]["idempotency_key"] == intent.key
+    assert rejected.status == "rejected"
+    assert store.list_plans(status="rejected")[0].review_reason == "bad price"
 
 
 def test_kill_switch_and_daily_loss_guard():

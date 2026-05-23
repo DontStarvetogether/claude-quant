@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from cq.utils.config import Config
 from cq.data.store.parquet_store import ParquetStore
-from web.schemas import SymbolInfo, SymbolsResponse
+from cq.utils.config import Config
 from web.data_update_service import DataUpdateService
+from web.schemas import SymbolInfo, SymbolsResponse
 
 router = APIRouter(prefix="/api/symbols", tags=["symbols"])
 
@@ -30,7 +30,7 @@ def _load_name_cache(store: ParquetStore) -> None:
         return
     # stock_info 列：symbol, name, ...
     if "symbol" in df.columns and "name" in df.columns:
-        _name_cache.update(dict(zip(df["symbol"], df["name"])))
+        _name_cache.update(dict(zip(df["symbol"], df["name"], strict=False)))
 
 
 def _local_symbols(store: ParquetStore) -> list[str]:
@@ -82,7 +82,6 @@ def _sync_names_from_akshare(store: ParquetStore) -> None:
     global _name_cache
     try:
         import akshare as ak
-        import pandas as pd
 
         df = ak.stock_info_a_code_name()
         # 列名：code, name（部分版本为 股票代码, 股票名称）
@@ -101,7 +100,7 @@ def _sync_names_from_akshare(store: ParquetStore) -> None:
         df["symbol"] = df["code"].astype(str).apply(_to_symbol)
         out = df[["symbol", "name"]].copy()
         store.write_stock_info(out)
-        _name_cache = dict(zip(out["symbol"], out["name"]))
+        _name_cache = dict(zip(out["symbol"], out["name"], strict=False))
     except Exception as e:
         from loguru import logger
         logger.warning(f"同步股票名称失败: {e}")

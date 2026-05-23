@@ -10,6 +10,7 @@ from cq.research import (
     calculate_ic,
     export_factor_report,
     generate_factor_report,
+    sample_split_diagnostics,
     summarize_ic,
 )
 
@@ -105,6 +106,7 @@ def test_export_factor_report_writes_tables_summary_and_markdown(tmp_path):
         start_date="2024-01-01",
         end_date="2024-01-02",
         metadata={"rebalance": "D"},
+        sample_split_date="2024-01-01",
         analysis=analysis,
         ic_summary=ic_summary,
         output_dir=tmp_path,
@@ -130,7 +132,28 @@ def test_export_factor_report_writes_tables_summary_and_markdown(tmp_path):
     assert payload["factor_name"] == "20日动量"
     assert payload["universe"] == "HS300_STATIC"
     assert payload["metadata"] == {"rebalance": "D"}
+    assert payload["sample_split_date"] == "2024-01-01"
+    assert payload["sample_diagnostics"]["out_of_sample_dates"] == 1
     assert payload["files"]["coverage"] == "coverage.csv"
     assert payload["table_rows"]["ic_summary"] == len(ic_summary)
     assert pd.read_csv(exported.files["coverage"])["coverage"].iloc[0] == 1.0
     assert exported.files["report"].read_text(encoding="utf-8").startswith("# 因子报告")
+    assert "## 样本切分诊断" in exported.files["report"].read_text(encoding="utf-8")
+
+
+def test_sample_split_diagnostics_reports_in_and_out_sample_coverage():
+    coverage = pd.DataFrame(
+        {
+            "date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            "available_count": [10, 9, 8],
+            "coverage": [1.0, 0.9, 0.8],
+        }
+    )
+
+    diagnostics = sample_split_diagnostics(coverage, "2024-01-02")
+
+    assert diagnostics["status"] == "available"
+    assert diagnostics["in_sample_dates"] == 2
+    assert diagnostics["out_of_sample_dates"] == 1
+    assert diagnostics["in_sample_avg_coverage"] == pytest.approx(0.95)
+    assert diagnostics["out_of_sample_avg_coverage"] == pytest.approx(0.8)

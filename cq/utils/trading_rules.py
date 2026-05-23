@@ -76,22 +76,22 @@ class AStockRules:
         return LimitPrices(limit_up=limit_up, limit_down=limit_down)
 
     @classmethod
-    def is_limit_up(cls, bar: "Bar") -> bool:  # type: ignore[name-defined]  # noqa: F821
+    def is_limit_up(cls, bar: Bar) -> bool:  # type: ignore[name-defined]  # noqa: F821
         """当日是否涨停（收盘价 >= 涨停价）。"""
         return bar.close >= bar.limit_up
 
     @classmethod
-    def is_limit_down(cls, bar: "Bar") -> bool:  # type: ignore[name-defined]  # noqa: F821
+    def is_limit_down(cls, bar: Bar) -> bool:  # type: ignore[name-defined]  # noqa: F821
         """当日是否跌停（收盘价 <= 跌停价）。"""
         return bar.close <= bar.limit_down
 
     @classmethod
-    def is_zt_open(cls, bar: "Bar") -> bool:  # type: ignore[name-defined]  # noqa: F821
+    def is_zt_open(cls, bar: Bar) -> bool:  # type: ignore[name-defined]  # noqa: F821
         """开盘即涨停（无法买入）。"""
         return bar.open >= bar.limit_up
 
     @classmethod
-    def is_dt_open(cls, bar: "Bar") -> bool:  # type: ignore[name-defined]  # noqa: F821
+    def is_dt_open(cls, bar: Bar) -> bool:  # type: ignore[name-defined]  # noqa: F821
         """开盘即跌停。"""
         return bar.open <= bar.limit_down
 

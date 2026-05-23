@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from web.runner import get_strategy_list
-from web.schemas import StrategyInfo, StrategyParam, StrategiesResponse
+from web.schemas import StrategiesResponse, StrategyInfo, StrategyParam
 
 router = APIRouter(prefix="/api/strategies", tags=["strategy"])
 

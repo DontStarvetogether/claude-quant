@@ -28,6 +28,19 @@ live:
   history_days: 300                # 预加载历史天数（供策略计算指标用）
   session_id: 1                    # QMT session_id（同账号多策略时需区分）
 
+live_safety:
+  require_trade_plan: true         # 实盘默认要求已批准交易计划
+  kill_switch_enabled: false       # true 时阻断新订单
+  kill_switch_reason: ""
+  daily_loss_limit_pct: 0.0        # 单日亏损比例阈值，0=不启用
+  daily_loss_limit_amount: 0.0     # 单日亏损金额阈值，0=不启用
+
+live_alerts:
+  jsonl_path: null                 # 如 "~/.cq/data/live_state/alerts/alerts.jsonl"
+  webhook_url: null                # 也可用 CQ_ALERT_WEBHOOK_URL
+  feishu_webhook_url: null         # 也可用 CQ_ALERT_FEISHU_WEBHOOK_URL
+  wecom_webhook_url: null          # 也可用 CQ_ALERT_WECOM_WEBHOOK_URL
+
 logging:
   level: "INFO"                    # DEBUG | INFO | WARNING | ERROR
   file: null                       # null=只输出控制台，填路径则同时写文件

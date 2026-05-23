@@ -59,6 +59,12 @@ const API = {
     if (!res.ok) throw new Error('获取股票池失败');
     return res.json();
   },
+
+  async getDataStats() {
+    const res = await fetch('/api/data/stats');
+    if (!res.ok) throw new Error('获取数据统计失败');
+    return res.json();
+  },
 };
 
 /**

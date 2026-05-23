@@ -13,9 +13,10 @@ BacktestEngine：回测主循环。
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Callable, Optional
+from typing import Any
 
 import pandas as pd
 from loguru import logger
@@ -61,18 +62,18 @@ class BacktestResult:
     equity_curve: pd.Series          # index=date, values=净资产
     trades: list[Trade]              # 完整成交记录
     rejected_orders: list[tuple]     # [(order_id, reason), ...]
-    benchmark: Optional[str] = None
-    benchmark_curve: Optional[pd.Series] = None  # index=date, values=基准归一化净值
+    benchmark: str | None = None
+    benchmark_curve: pd.Series | None = None  # index=date, values=基准归一化净值
     benchmark_status: str = "not_requested"
-    benchmark_error: Optional[str] = None
+    benchmark_error: str | None = None
     alpha_beta_available: bool = False
-    benchmark_diagnostics: Optional[dict[str, Any]] = None
-    data_diagnostics: Optional[dict[str, Any]] = None
-    universe_diagnostics: Optional[dict[str, Any]] = None
-    data_quality: Optional[dict[str, Any]] = None
-    execution_diagnostics: Optional[dict[str, Any]] = None
-    execution_assumptions: Optional[dict[str, Any]] = None
-    metric_diagnostics: Optional[dict[str, Any]] = None
+    benchmark_diagnostics: dict[str, Any] | None = None
+    data_diagnostics: dict[str, Any] | None = None
+    universe_diagnostics: dict[str, Any] | None = None
+    data_quality: dict[str, Any] | None = None
+    execution_diagnostics: dict[str, Any] | None = None
+    execution_assumptions: dict[str, Any] | None = None
+    metric_diagnostics: dict[str, Any] | None = None
     risk_events: list[dict[str, Any]] = field(default_factory=list)
     engine_version: str = ENGINE_VERSION
     execution_model: str = EXECUTION_MODEL
@@ -116,10 +117,10 @@ class BacktestEngine:
     def __init__(
         self,
         config: Config,
-        progress_callback: Optional[ProgressCallback] = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> None:
         self._config = config
-        self._strategy: Optional[Strategy] = None
+        self._strategy: Strategy | None = None
         self._symbols: list[str] = []
         self._progress_callback = progress_callback
 

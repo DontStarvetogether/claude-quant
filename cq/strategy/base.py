@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -39,17 +39,17 @@ class StrategyContext:
 
     def __init__(
         self,
-        portfolio: "PortfolioManager",
-        feed: "HistoricalFeed",
+        portfolio: PortfolioManager,
+        feed: HistoricalFeed,
     ) -> None:
         self._portfolio = portfolio
         self._feed = feed
-        self._current_date: Optional[date] = None
+        self._current_date: date | None = None
 
     def _set_date(self, trade_date: date) -> None:
         self._current_date = trade_date
 
-    def get_position(self, symbol: str) -> Optional[PositionSnapshot]:
+    def get_position(self, symbol: str) -> PositionSnapshot | None:
         """返回持仓快照，无持仓时返回 None。"""
         return self._portfolio.get_position(symbol)
 
@@ -72,7 +72,7 @@ class StrategyContext:
             return pd.DataFrame()
         return self._feed.get_history(symbol, self._current_date, n)
 
-    def get_trade_date(self) -> Optional[date]:
+    def get_trade_date(self) -> date | None:
         """当前处理的交易日期。"""
         return self._current_date
 
@@ -89,11 +89,11 @@ class Strategy(ABC):
     strategy_id: str = ""
 
     def __init__(self) -> None:
-        self._bus: Optional["EventBus"] = None
-        self.ctx: Optional[StrategyContext] = None
+        self._bus: EventBus | None = None
+        self.ctx: StrategyContext | None = None
         self._configured_params: dict[str, Any] = {}
 
-    def _setup(self, bus: "EventBus", ctx: StrategyContext) -> None:
+    def _setup(self, bus: EventBus, ctx: StrategyContext) -> None:
         """引擎调用，设置事件总线和上下文。"""
         self._bus = bus
         self.ctx = ctx
@@ -107,30 +107,34 @@ class Strategy(ABC):
 
     def on_init(self) -> None:
         """引擎 add_strategy 时调用，做参数初始化。"""
+        return None
 
     def before_trading(self, trade_date: date) -> None:
         """当日 bar 推送前调用，可做日初准备。"""
+        return None
 
     @abstractmethod
-    def on_bar(self, bar: "Bar") -> None:  # type: ignore[name-defined]  # noqa: F821
+    def on_bar(self, bar: Bar) -> None:  # type: ignore[name-defined]  # noqa: F821
         """每根 Bar 触发，策略核心逻辑。"""
 
     def after_trading(self, trade_date: date) -> None:
         """当日所有 bar 处理完后调用，适合跨股票决策。"""
+        return None
 
     def on_order_update(self, event: FillEvent | RejectEvent) -> None:
         """收到成交或拒绝回报。"""
+        return None
 
     # ── 下单接口 ───────────────────────────────────────────────────────────────
 
     def buy(
         self,
         symbol: str,
-        price: Optional[float] = None,
-        quantity: Optional[int] = None,
-        percent: Optional[float] = None,
-        amount: Optional[float] = None,
-    ) -> Optional[str]:
+        price: float | None = None,
+        quantity: int | None = None,
+        percent: float | None = None,
+        amount: float | None = None,
+    ) -> str | None:
         """
         发出买入信号。
 
@@ -168,10 +172,10 @@ class Strategy(ABC):
     def sell(
         self,
         symbol: str,
-        price: Optional[float] = None,
-        quantity: Optional[int] = None,
-        percent: Optional[float] = None,
-    ) -> Optional[str]:
+        price: float | None = None,
+        quantity: int | None = None,
+        percent: float | None = None,
+    ) -> str | None:
         """
         发出卖出信号。
 

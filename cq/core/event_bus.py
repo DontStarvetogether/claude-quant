@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import heapq
 from collections import defaultdict
-from typing import Callable
+from collections.abc import Callable
 
-from cq.core.events import AnyEvent, Event
-
+from cq.core.events import AnyEvent
 
 # 订阅者类型：接收事件，不返回值
 Handler = Callable[[AnyEvent], None]

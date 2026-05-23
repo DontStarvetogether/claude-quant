@@ -15,7 +15,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  scripts/  Web/          （用户入口）                 │
+│  cq CLI / scripts / Web  （用户入口）                 │
 ├─────────────────────────────────────────────────────┤
 │  strategy/               （策略层）                   │
 │    只通过 StrategyContext 只读访问状态                  │
@@ -36,7 +36,7 @@
 │  └── event_bus.py         优先队列事件总线              │
 ├─────────────────────────────────────────────────────┤
 │  data/                   （数据层）                    │
-│  ├── source/              外部数据源（baostock/tushare）│
+│  ├── source/              外部数据源（akshare/baostock）│
 │  ├── store/               本地 Parquet 存储             │
 │  ├── feed/                向引擎推送 BarEvent           │
 │  └── adjust/              复权计算                     │
@@ -70,12 +70,11 @@ EventPriority:
   EOD         = 90   EndOfDayEvent
 ```
 
-### 同步 vs 异步
+### 同步事件模型
 
-- **回测**：同步 `EventBus`，单线程，确保可重现
-- **实盘**：`AsyncEventBus`（接口相同），基于 `asyncio`，网络 IO 不阻塞主循环
-
-两者实现同一个 ABC，引擎代码无需修改。
+- **回测**：同步 `EventBus`，单线程，确保可重现。
+- **模拟盘 / 实盘**：`LiveEngine` 仍复用同步 `EventBus`，外部行情/券商回报通过线程安全队列进入主循环。
+- 当前没有单独的 `AsyncEventBus` 实现；实盘的网络 IO 隔离在 feed / executor 层。
 
 ---
 
@@ -224,10 +223,10 @@ ctx.get_trade_date()            # 当前处理日期
 
 | ABC | 实现类 | 职责 |
 |-----|--------|------|
-| `DataSource` | `BaostockSource`, `TushareSource`, `CsvSource` | 从外部 API 拉取标准化数据 |
-| `DataStore` | `ParquetStore`, `MemoryStore` | 本地数据读写（Parquet / 内存） |
+| `DataSource` | `AkshareSource`, `BaostockSource` | 从外部 API 拉取标准化数据 |
+| `DataStore` | `ParquetStore` | 本地数据读写（Parquet） |
 | `DataFeed` | `HistoricalFeed`, `RealtimeFeed` | 向引擎推送 `BarEvent` |
-| `MatchingEngine` | `BarMatchingEngine`, `RealtimeMatchingEngine` | 订单撮合 |
+| `MatchingEngine` | `BarMatchingEngine` | D+1 订单撮合 |
 | `Strategy` | 用户自定义 + 内置示例 | 策略逻辑 |
 | `Executor` | `SimulatedExecutor`, `QMTExecutor` | 信号 → 订单路由 |
 | `RiskGuard` | `PreTradeRisk`, `PortfolioRisk` | 风控检查 |
@@ -247,8 +246,7 @@ engine:
 
 data:
   root: "~/.cq/data"
-  source: "baostock"         # baostock | tushare
-  # token 通过环境变量 TUSHARE_TOKEN 注入，不写配置文件
+  source: "akshare"          # akshare | baostock
 
 risk:
   max_position_pct: 0.20     # 单股最大仓位 20%

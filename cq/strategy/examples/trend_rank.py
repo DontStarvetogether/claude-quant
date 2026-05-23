@@ -135,7 +135,6 @@ class TrendRankStrategy(Strategy):
 
     def after_trading(self, trade_date: date) -> None:
         ranked = sorted(self._today_candidates, key=lambda c: c.score, reverse=True)
-        top_symbols = {c.symbol for c in ranked[: self.top_n]}
         exit_rank_n = max(self.rank_exit_n, self.top_n)
         exit_symbols = {c.symbol for c in ranked[:exit_rank_n]}
 

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,7 +44,7 @@ def _get_all_symbols(exchange: str) -> list[str]:
     """获取交易所所有股票代码"""
     try:
         import akshare as ak
-        
+
         if exchange == "SH":
             df = ak.stock_info_sh_name_code()
             codes = df["证券代码"].tolist()
@@ -74,17 +74,17 @@ def main(
     config_path: str,
 ) -> None:
     config = Config.from_yaml(config_path)
-    
+
     logger.remove()
     logger.add(sys.stderr, level=config.logging.level)
-    
+
     pipeline = _build_pipeline(config)
-    
+
     end_date = date.today()
     start_date = date(end_date.year - years, end_date.month, end_date.day)
-    
+
     symbols_to_download = []
-    
+
     if exchange == "all":
         logger.info("获取全市场股票列表...")
         sh_symbols = _get_all_symbols("SH")
@@ -93,17 +93,17 @@ def main(
     else:
         logger.info(f"获取{exchange}股票列表...")
         symbols_to_download = _get_all_symbols(exchange)
-    
+
     if not symbols_to_download:
         logger.error("未获取到股票列表")
         sys.exit(1)
-    
+
     if limit:
         symbols_to_download = symbols_to_download[:limit]
         logger.info(f"限制下载数量为 {limit} 只股票")
-    
+
     logger.info(f"准备下载 {len(symbols_to_download)} 只股票的数据 ({start_date} ~ {end_date})")
-    
+
     results = pipeline.update_batch(
         symbols_to_download,
         end_date,
@@ -111,11 +111,11 @@ def main(
         max_workers=workers,
         force=False
     )
-    
+
     total = sum(results.values())
     success = sum(1 for v in results.values() if v > 0)
     failed = len(results) - success
-    
+
     logger.info(f"下载完成！成功: {success}, 失败: {failed}, 总记录数: {total}")
 
 

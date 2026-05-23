@@ -8,6 +8,7 @@ from cq.research.report import (
     FactorReportExport,
     export_factor_report,
     generate_factor_report,
+    sample_split_diagnostics,
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "calculate_ic",
     "export_factor_report",
     "generate_factor_report",
+    "sample_split_diagnostics",
     "summarize_ic",
 ]

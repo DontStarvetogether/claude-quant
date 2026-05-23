@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import time
 from datetime import date
-from typing import Optional
 
 from loguru import logger
 
@@ -100,7 +99,7 @@ class ReplayFeed(RealtimeFeed):
     def stop(self) -> None:
         self._running = False
 
-    def get_latest_bar(self, symbol: str) -> Optional[Bar]:
+    def get_latest_bar(self, symbol: str) -> Bar | None:
         """返回最近一个交易日该标的的 Bar（测试用）。"""
         for trade_date in sorted(self._bars_by_date, reverse=True):
             for bar in self._bars_by_date[trade_date]:

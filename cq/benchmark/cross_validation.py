@@ -13,6 +13,7 @@ import pandas as pd
 from cq.benchmark.momentum_topn import BenchmarkResult
 
 SCHEMA_VERSION = "cross_validation.v1"
+CROSS_VALIDATION_TEMPLATE_SCHEMA_VERSION = "cross_validation_template.v1"
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,15 @@ class CrossValidationInputFiles:
     equity_curve: Path | None = None
     holdings: Path | None = None
     trades: Path | None = None
+
+
+@dataclass(frozen=True)
+class CrossValidationTemplateExport:
+    """Template files for collecting external platform exports."""
+
+    output_dir: Path
+    files: dict[str, Path]
+    summary: dict[str, Any]
 
 
 def compare_benchmark_with_external(
@@ -120,6 +130,76 @@ def load_cross_validation_frames(
     return frames
 
 
+def export_cross_validation_template(
+    output_dir: str | Path,
+    *,
+    platform_name: str = "external",
+) -> CrossValidationTemplateExport:
+    """Write canonical CSV templates and an assumptions file for external validation."""
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    files: dict[str, Path] = {}
+
+    templates = {
+        "equity_curve": pd.DataFrame(
+            columns=["date", "total_assets", "cash", "position_value"]
+        ),
+        "holdings": pd.DataFrame(columns=["date", "symbol", "quantity", "market_value"]),
+        "trades": pd.DataFrame(
+            columns=[
+                "trade_date",
+                "symbol",
+                "side",
+                "quantity",
+                "price",
+                "amount",
+                "commission",
+                "stamp_tax",
+                "net_amount",
+            ]
+        ),
+    }
+    for name, frame in templates.items():
+        path = out / f"{name}.csv"
+        frame.to_csv(path, index=False)
+        files[name] = path
+
+    assumptions = {
+        "schema_version": CROSS_VALIDATION_TEMPLATE_SCHEMA_VERSION,
+        "platform_name": platform_name,
+        "required_files": {
+            "equity_curve": "date,total_assets,cash,position_value",
+            "holdings": "date,symbol,quantity,market_value",
+            "trades": "trade_date,symbol,side,quantity,price,amount,commission,stamp_tax,net_amount",
+        },
+        "must_record": [
+            "adjustment_mode",
+            "universe_id_or_membership_file",
+            "rebalance_schedule",
+            "signal_price",
+            "execution_price",
+            "commission_rate",
+            "min_commission",
+            "stamp_tax_rate",
+            "slippage_model",
+            "limit_up_down_policy",
+            "suspension_policy",
+            "t1_policy",
+            "lot_size_policy",
+        ],
+        "notes": "把外部平台导出的字段改名为模板列名，或保留常见中文/平台字段名让 cq cross-validate 自动识别。",
+    }
+    assumptions_path = out / "external_platform_assumptions.json"
+    assumptions_path.write_text(json.dumps(assumptions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    files["assumptions"] = assumptions_path
+
+    readme_path = out / "README.md"
+    readme_path.write_text(_cross_validation_template_readme(platform_name), encoding="utf-8")
+    files["readme"] = readme_path
+    return CrossValidationTemplateExport(output_dir=out, files=files, summary=assumptions)
+
+
 def export_cross_validation_result(
     result: CrossValidationResult,
     output_dir: str | Path,
@@ -150,6 +230,20 @@ def export_cross_validation_result(
     report_path.write_text(result.markdown, encoding="utf-8")
     files["report"] = report_path
     return CrossValidationExport(output_dir=out, files=files, summary=result.summary)
+
+
+def _cross_validation_template_readme(platform_name: str) -> str:
+    return (
+        "# 外部平台对账导出模板\n\n"
+        f"目标平台：`{platform_name}`\n\n"
+        "把 JoinQuant / RiceQuant / QMT 等平台导出的每日净值、每日持仓、成交记录整理到本目录三张 CSV：\n\n"
+        "- `equity_curve.csv`: `date,total_assets,cash,position_value`\n"
+        "- `holdings.csv`: `date,symbol,quantity,market_value`\n"
+        "- `trades.csv`: `trade_date,symbol,side,quantity,price,amount,commission,stamp_tax,net_amount`\n\n"
+        "`side` 使用 `BUY` / `SELL`，股票代码使用 `000001.SZ` / `600000.SH` / `430047.BJ`。\n\n"
+        "同时填写 `external_platform_assumptions.json` 里的复权、股票池、调仓日、成交价、费用、"
+        "涨跌停、停牌、T+1、最小交易单位等假设，便于解释差异。\n"
+    )
 
 
 def generate_cross_validation_report(

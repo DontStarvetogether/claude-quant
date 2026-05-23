@@ -98,6 +98,9 @@ class WebhookAlertSink:
             "text": f"[{event.level.value}] {event.title}\n{event.message}",
             "event": event.to_dict(),
         }
+        self._post_payload(payload)
+
+    def _post_payload(self, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(
             self._url,
@@ -107,6 +110,62 @@ class WebhookAlertSink:
         )
         with urlopen(request, timeout=self._timeout) as response:
             response.read()
+
+
+class FeishuAlertSink(WebhookAlertSink):
+    """Send alerts to a Feishu custom bot webhook."""
+
+    def send(self, event: AlertEvent) -> None:
+        payload = {
+            "msg_type": "interactive",
+            "card": {
+                "config": {"wide_screen_mode": True},
+                "header": {
+                    "title": {"tag": "plain_text", "content": f"[{event.level.value}] {event.title}"},
+                    "template": _feishu_template(event.level),
+                },
+                "elements": [
+                    {"tag": "div", "text": {"tag": "lark_md", "content": event.message}},
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"source: {event.source}\nsession: {event.session_id or '-'}",
+                        },
+                    },
+                ],
+            },
+            "event": event.to_dict(),
+        }
+        self._post_payload(payload)
+
+
+class WeComAlertSink(WebhookAlertSink):
+    """Send alerts to a WeCom group bot webhook."""
+
+    def send(self, event: AlertEvent) -> None:
+        payload = {
+            "msgtype": "markdown",
+            "markdown": {
+                "content": (
+                    f"**[{event.level.value}] {event.title}**\n"
+                    f"> {event.message}\n"
+                    f"> source: {event.source}\n"
+                    f"> session: {event.session_id or '-'}"
+                )
+            },
+            "event": event.to_dict(),
+        }
+        self._post_payload(payload)
+
+
+def _feishu_template(level: AlertLevel) -> str:
+    return {
+        AlertLevel.INFO: "blue",
+        AlertLevel.WARNING: "orange",
+        AlertLevel.ERROR: "red",
+        AlertLevel.CRITICAL: "red",
+    }[level]
 
 
 class AlertManager:

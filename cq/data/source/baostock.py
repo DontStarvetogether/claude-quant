@@ -13,12 +13,11 @@ baostock 是免费的 A 股数据 API，覆盖沪深主要股票。
 
 from __future__ import annotations
 
-import time
+import threading
+from collections.abc import Callable
 from datetime import date, datetime
 from functools import wraps
-from typing import Any, Callable, TypeVar
-
-import threading
+from typing import Any, TypeVar
 
 import pandas as pd
 from loguru import logger
@@ -47,9 +46,9 @@ def _require_baostock(func: F) -> F:
 class BaostockSession:
     """baostock 登录状态单例，自动重连。"""
 
-    _instance: "BaostockSession | None" = None
+    _instance: BaostockSession | None = None
 
-    def __new__(cls) -> "BaostockSession":
+    def __new__(cls) -> BaostockSession:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._logged_in = False
@@ -168,7 +167,7 @@ class BaostockSource(DataSource):
         if rs.error_code != "0" or not rs.next():
             raise ValueError(f"无法获取 {symbol} 的股票信息: {rs.error_msg}")
 
-        row = dict(zip(rs.fields, rs.get_row_data()))
+        row = dict(zip(rs.fields, rs.get_row_data(), strict=False))
 
         exchange = "SH" if symbol.endswith(".SH") else "SZ"
         code = symbol.split(".")[0]

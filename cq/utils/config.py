@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 try:
     import yaml  # type: ignore[import-untyped]
@@ -34,7 +33,7 @@ class EngineConfig:
 class DataConfig:
     root: str = "~/.cq/data"
     source: str = "akshare"
-    tushare_token: Optional[str] = field(default=None)
+    tushare_token: str | None = field(default=None)
 
     def __post_init__(self) -> None:
         # 从环境变量读取 token
@@ -65,9 +64,35 @@ class LiveConfig:
 
 
 @dataclass
+class LiveSafetyConfig:
+    """实盘安全阈值。"""
+
+    require_trade_plan: bool = True
+    kill_switch_enabled: bool = False
+    kill_switch_reason: str = ""
+    daily_loss_limit_pct: float = 0.0
+    daily_loss_limit_amount: float = 0.0
+
+
+@dataclass
+class LiveAlertsConfig:
+    """实盘报警通道。密钥和 webhook URL 允许由环境变量注入。"""
+
+    jsonl_path: str | None = None
+    webhook_url: str | None = None
+    feishu_webhook_url: str | None = None
+    wecom_webhook_url: str | None = None
+
+    def __post_init__(self) -> None:
+        self.webhook_url = self.webhook_url or os.getenv("CQ_ALERT_WEBHOOK_URL")
+        self.feishu_webhook_url = self.feishu_webhook_url or os.getenv("CQ_ALERT_FEISHU_WEBHOOK_URL")
+        self.wecom_webhook_url = self.wecom_webhook_url or os.getenv("CQ_ALERT_WECOM_WEBHOOK_URL")
+
+
+@dataclass
 class LoggingConfig:
     level: str = "INFO"
-    file: Optional[str] = None
+    file: str | None = None
     rotation: str = "10 MB"
 
 
@@ -77,14 +102,16 @@ class Config:
     data: DataConfig = field(default_factory=DataConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     live: LiveConfig = field(default_factory=LiveConfig)
+    live_safety: LiveSafetyConfig = field(default_factory=LiveSafetyConfig)
+    live_alerts: LiveAlertsConfig = field(default_factory=LiveAlertsConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     @classmethod
-    def default(cls) -> "Config":
+    def default(cls) -> Config:
         return cls()
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "Config":
+    def from_yaml(cls, path: str | Path) -> Config:
         """从 YAML 文件加载配置，合并到默认值。"""
         if not HAS_YAML:
             raise ImportError("请安装 pyyaml: pip install pyyaml")
@@ -118,6 +145,16 @@ class Config:
                 if hasattr(cfg.live, k):
                     setattr(cfg.live, k, v)
 
+        if live_safety_raw := raw.get("live_safety"):
+            for k, v in live_safety_raw.items():
+                if hasattr(cfg.live_safety, k):
+                    setattr(cfg.live_safety, k, v)
+
+        if live_alerts_raw := raw.get("live_alerts"):
+            for k, v in live_alerts_raw.items():
+                if hasattr(cfg.live_alerts, k):
+                    setattr(cfg.live_alerts, k, v)
+
         if log_raw := raw.get("logging"):
             for k, v in log_raw.items():
                 if hasattr(cfg.logging, k):
@@ -125,5 +162,6 @@ class Config:
 
         # 环境变量覆盖
         cfg.data.__post_init__()
+        cfg.live_alerts.__post_init__()
 
         return cfg

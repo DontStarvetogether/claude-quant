@@ -6,11 +6,28 @@
 
 from __future__ import annotations
 
-import numpy as np
+from datetime import date
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
-from datetime import date
-from unittest.mock import MagicMock, patch
+
+
+@pytest.fixture(autouse=True)
+def _isolate_akshare_network_calls():
+    """Keep AkshareSource unit tests on deterministic mocked data."""
+    from cq.data.source.akshare import AkshareSource
+
+    AkshareSource._suspension_cache = {}
+    AkshareSource._st_codes_cache = set()
+    with (
+        patch("akshare.stock_zh_a_daily", side_effect=RuntimeError("mocked sina source unavailable")),
+        patch("akshare.stock_tfp_em", return_value=pd.DataFrame()),
+        patch("akshare.stock_zh_a_st_em", return_value=pd.DataFrame()),
+    ):
+        yield
+    AkshareSource._suspension_cache = None
+    AkshareSource._st_codes_cache = None
 
 
 # ── 辅助函数：构造 akshare 返回的 DataFrame ──────────────────────────────────
@@ -116,7 +133,7 @@ class TestAkshareSourceColumnMapping:
         )
         with patch("akshare.stock_zh_a_hist", return_value=raw):
             result = source.fetch_daily_bars("600519.SH", date(2024, 1, 2), date(2024, 1, 2))
-        assert result["is_suspended"].iloc[0] is True or result["is_suspended"].iloc[0] == True
+        assert bool(result["is_suspended"].iloc[0])
 
     def test_is_suspended_false_when_trading(self):
         """正常交易日 is_suspended=False。"""
@@ -129,7 +146,7 @@ class TestAkshareSourceColumnMapping:
         )
         with patch("akshare.stock_zh_a_hist", return_value=raw):
             result = source.fetch_daily_bars("600519.SH", date(2024, 1, 2), date(2024, 1, 2))
-        assert result["is_suspended"].iloc[0] is False or result["is_suspended"].iloc[0] == False
+        assert not bool(result["is_suspended"].iloc[0])
 
     def test_is_st_always_false(self):
         """is_st 当前版本固定为 False（历史 ST 数据不可用）。"""
@@ -142,7 +159,7 @@ class TestAkshareSourceColumnMapping:
         )
         with patch("akshare.stock_zh_a_hist", return_value=raw):
             result = source.fetch_daily_bars("600519.SH", date(2024, 1, 2), date(2024, 1, 3))
-        assert result["is_st"].all() == False
+        assert not result["is_st"].all()
 
     def test_trade_date_is_python_date(self):
         """trade_date 列应为 Python date 对象，不是字符串。"""

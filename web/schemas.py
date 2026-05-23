@@ -337,6 +337,12 @@ class LiveStartRequest(BaseModel):
     # 实盘专用配置
     account_id: Optional[str] = None    # QMT 资金账号（实盘必填）
     mini_qmt_dir: Optional[str] = None  # QMT 数据目录（实盘可选，有默认值）
+    require_trade_plan: Optional[bool] = None  # None=实盘默认要求，模拟盘默认不要求
+    trade_plan_id: Optional[str] = None
+    kill_switch_enabled: Optional[bool] = None
+    kill_switch_reason: Optional[str] = None
+    daily_loss_limit_pct: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    daily_loss_limit_amount: Optional[float] = Field(default=None, ge=0.0)
 
 
 class LiveStartResponse(BaseModel):
@@ -400,3 +406,36 @@ class LiveSessionSummary(BaseModel):
 
 class LiveSessionsResponse(BaseModel):
     sessions: list[LiveSessionSummary]
+
+
+class TradePlanOrderRequest(BaseModel):
+    symbol: str
+    side: str = Field(pattern="^(BUY|SELL)$")
+    quantity: int = Field(default=0, ge=0)
+    trade_date: str
+    order_type: str = Field(default="MARKET", pattern="^(MARKET|LIMIT)$")
+    namespace: str = "web"
+    limit_price: Optional[float] = None
+    percent: Optional[float] = None
+    amount: Optional[float] = None
+
+
+class TradePlanCreateRequest(BaseModel):
+    trade_date: str
+    strategy_id: str
+    account_id: str
+    orders: list[TradePlanOrderRequest] = Field(default_factory=list)
+    plan_id: Optional[str] = None
+
+
+class TradePlanReviewRequest(BaseModel):
+    reviewer: str = "web"
+    reason: str = ""
+
+
+class TradePlanResponse(BaseModel):
+    plan: dict[str, Any]
+
+
+class TradePlanListResponse(BaseModel):
+    plans: list[dict[str, Any]]

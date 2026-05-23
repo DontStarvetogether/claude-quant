@@ -11,6 +11,7 @@ let selectedSymbols = new Set();
 let activeUniverse = customUniverse();
 let currentRunId = null;
 let sseSource = null;
+let latestDataDate = null;
 
 // 显示配置
 const DISPLAY_CONFIG = {
@@ -53,7 +54,7 @@ function presetUniverse(preset) {
 
 // ── 初始化 ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  initDateDefaults();
+  await initDateDefaults();
   await loadStrategies();
   await loadQuickSymbols();
   await loadUniversePresets();
@@ -158,11 +159,7 @@ function applyPeriodPreset(presetId) {
   if (!preset) return;
 
   if (preset.months) {
-    const end = new Date();
-    const start = new Date(end);
-    start.setMonth(start.getMonth() - preset.months);
-    document.getElementById('start-date').value = start.toISOString().slice(0, 10);
-    document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+    setDateRangeByMonths(preset.months);
   } else {
     document.getElementById('start-date').value = preset.start;
     document.getElementById('end-date').value = preset.end;
@@ -172,29 +169,57 @@ function applyPeriodPreset(presetId) {
 }
 
 // ── 日期默认值（近 3 年）────────────────────────────────────────────────────
-function initDateDefaults() {
-  const today = new Date();
-  const threeYearsAgo = new Date(today);
-  threeYearsAgo.setFullYear(today.getFullYear() - 3);
+async function initDateDefaults() {
+  latestDataDate = await loadLatestDataDate();
+  setDateRangeByMonths(36);
 
-  document.getElementById('end-date').value = today.toISOString().slice(0, 10);
-  document.getElementById('start-date').value = threeYearsAgo.toISOString().slice(0, 10);
 
   // 快捷日期按钮
   document.getElementById('date-shortcuts')?.addEventListener('click', e => {
     const btn = e.target.closest('[data-months]');
     if (!btn) return;
     const months = parseInt(btn.dataset.months);
-    const end = new Date();
-    const start = new Date(end);
-    start.setMonth(start.getMonth() - months);
-    document.getElementById('start-date').value = start.toISOString().slice(0, 10);
-    document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+    setDateRangeByMonths(months);
     updateSampleCheck();
   });
 
   document.getElementById('start-date')?.addEventListener('change', updateSampleCheck);
   document.getElementById('end-date')?.addEventListener('change', updateSampleCheck);
+}
+
+async function loadLatestDataDate() {
+  try {
+    const stats = await API.getDataStats();
+    return stats.latest_date || todayYmd();
+  } catch (e) {
+    console.warn('加载本地最新行情日期失败，回退到今天', e);
+    return todayYmd();
+  }
+}
+
+function setDateRangeByMonths(months) {
+  const endText = latestDataDate || todayYmd();
+  const end = parseYmd(endText);
+  const start = new Date(end);
+  start.setMonth(start.getMonth() - months);
+  document.getElementById('start-date').value = formatYmd(start);
+  document.getElementById('end-date').value = formatYmd(end);
+}
+
+function parseYmd(value) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatYmd(value) {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function todayYmd() {
+  return formatYmd(new Date());
 }
 
 // ── 策略加载 ─────────────────────────────────────────────────────────────────

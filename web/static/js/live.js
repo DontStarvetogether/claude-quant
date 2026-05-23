@@ -57,7 +57,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await Promise.all([loadStrategies(), loadAllSymbols()]);
   setupSymbolInput();
   setupForm();
+  setupSafetyPanels();
   await loadSessions();
+  await loadSafetyPanels();
 
   // URL 路由：自动打开指定会话（对齐回测页 ?run_id= 格式）
   const sid = new URLSearchParams(window.location.search).get('session_id');
@@ -438,8 +440,12 @@ async function startSession() {
     // 实盘模式
     const accountId = document.getElementById('qmt-account-id').value.trim();
     const qmtDir = document.getElementById('qmt-dir').value.trim();
+    const tradePlanId = document.getElementById('trade-plan-id').value.trim();
     if (!accountId) return showError('实盘模式需要填写 QMT 资金账号');
+    if (!tradePlanId) return showError('实盘模式需要填写已批准交易计划ID');
     payload.account_id = accountId;
+    payload.require_trade_plan = true;
+    payload.trade_plan_id = tradePlanId;
     if (qmtDir) payload.mini_qmt_dir = qmtDir;
 
     // 二次确认
@@ -488,6 +494,147 @@ function showError(msg) {
   const el = document.getElementById('form-error');
   el.textContent = msg;
   el.classList.remove('hidden');
+}
+
+// ── 实盘安全 / 恢复 / 日报 ───────────────────────────────────────────────────
+
+function setupSafetyPanels() {
+  document.getElementById('refresh-plans-btn')?.addEventListener('click', loadTradePlans);
+  document.getElementById('refresh-recovery-btn')?.addEventListener('click', loadRecoveryStates);
+  document.getElementById('refresh-reports-btn')?.addEventListener('click', loadDailyReports);
+  document.getElementById('close-report-detail-btn')?.addEventListener('click', () => {
+    document.getElementById('daily-report-detail')?.classList.add('hidden');
+  });
+}
+
+async function loadSafetyPanels() {
+  await Promise.all([loadTradePlans(), loadRecoveryStates(), loadDailyReports()]);
+}
+
+async function loadTradePlans() {
+  const el = document.getElementById('trade-plans-list');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/live/plans');
+    const data = await res.json();
+    const plans = data.plans || [];
+    if (!plans.length) {
+      el.innerHTML = '<p class="px-4 py-4 text-sm text-gray-600">暂无交易计划</p>';
+      return;
+    }
+    el.innerHTML = plans.slice(0, 8).map(plan => {
+      const statusCls = plan.status === 'approved' ? 'text-red-400' : (plan.status === 'rejected' ? 'text-green-400' : 'text-yellow-400');
+      const orders = plan.orders || [];
+      const first = orders[0] || {};
+      const orderText = orders.length ? `${first.symbol || ''} ${first.side || ''} ${first.quantity || 0}股` : '无订单';
+      const actionBtns = plan.status === 'pending' ? `
+        <button onclick="approveTradePlan('${plan.plan_id}')" class="px-2 py-1 text-xs bg-red-900/40 border border-red-800 rounded text-red-300 hover:border-red-500">批准</button>
+        <button onclick="rejectTradePlan('${plan.plan_id}')" class="px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-300 hover:border-green-500">拒绝</button>` : '';
+      return `<div class="px-4 py-3 text-sm">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-mono text-gray-200 truncate">${plan.plan_id}</div>
+            <div class="text-xs text-gray-500 mt-0.5">${plan.strategy_id} · ${plan.account_id} · ${plan.trade_date}</div>
+            <div class="text-xs text-gray-400 mt-1">${orders.length} 笔 · ${orderText}</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-xs ${statusCls}">${plan.status}</span>
+            ${actionBtns}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<p class="px-4 py-4 text-sm text-red-400">交易计划加载失败</p>';
+  }
+}
+
+async function approveTradePlan(planId) {
+  await reviewTradePlan(planId, 'approve', { reviewer: 'web' });
+}
+
+async function rejectTradePlan(planId) {
+  const reason = prompt('拒绝原因', 'manual reject') || 'manual reject';
+  await reviewTradePlan(planId, 'reject', { reviewer: 'web', reason });
+}
+
+async function reviewTradePlan(planId, action, body) {
+  try {
+    const res = await fetch(`/api/live/plans/${planId}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error('review failed');
+    await loadTradePlans();
+  } catch (e) {
+    showError('交易计划更新失败');
+  }
+}
+
+async function loadRecoveryStates() {
+  const el = document.getElementById('recovery-list');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/live/recovery');
+    const data = await res.json();
+    const states = data.states || [];
+    if (!states.length) {
+      el.innerHTML = '<p class="px-4 py-4 text-sm text-gray-600">暂无恢复快照</p>';
+      return;
+    }
+    el.innerHTML = states.slice(0, 8).map(state => `
+      <div class="px-4 py-3 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="font-mono text-gray-200">${state.session_id}</span>
+          <span class="text-xs text-gray-400">${state.status}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">${state.updated_at || ''}</div>
+        <div class="text-xs text-gray-500 mt-1">${(state.pending_plan_ids || []).join(', ')}</div>
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = '<p class="px-4 py-4 text-sm text-red-400">恢复状态加载失败</p>';
+  }
+}
+
+async function loadDailyReports() {
+  const el = document.getElementById('daily-reports-list');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/live/daily-reports');
+    const data = await res.json();
+    const reports = data.reports || [];
+    if (!reports.length) {
+      el.innerHTML = '<p class="px-4 py-4 text-sm text-gray-600">暂无日报</p>';
+      return;
+    }
+    el.innerHTML = reports.slice(0, 8).map(report => {
+      const summary = report.summary || {};
+      const ret = summary.total_return == null ? '--' : Fmt.pct(summary.total_return);
+      return `<button type="button" onclick="showDailyReport('${report.session_id}')"
+        class="w-full text-left px-4 py-3 text-sm hover:bg-gray-900/70 transition-colors">
+        <div class="flex items-center justify-between">
+          <span class="font-mono text-gray-200">${report.session_id}</span>
+          <span class="text-xs ${summary.total_return >= 0 ? CLASS_UP : CLASS_DOWN}">${ret}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">${report.trade_date || ''} · ${summary.trade_count || 0} 笔成交</div>
+      </button>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<p class="px-4 py-4 text-sm text-red-400">交易日报加载失败</p>';
+  }
+}
+
+async function showDailyReport(sessionId) {
+  try {
+    const res = await fetch(`/api/live/${sessionId}/daily-report`);
+    if (!res.ok) throw new Error('report not found');
+    const data = await res.json();
+    document.getElementById('daily-report-markdown').textContent = data.markdown || '';
+    document.getElementById('daily-report-detail').classList.remove('hidden');
+  } catch (e) {
+    showError('交易日报加载失败');
+  }
 }
 
 // ── SSE 实时推送 ─────────────────────────────────────────────────────────────

@@ -9,8 +9,6 @@ PortfolioManager：持仓和资金管理。
 
 from __future__ import annotations
 
-from datetime import date
-
 from loguru import logger
 
 from cq.core.events import EndOfDayEvent, FillEvent
