@@ -22,7 +22,7 @@
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
 | Phase 5 股票池体系升级 | 已完成初版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；PIT 可从 CSV/DataFrame 按日期解析，真实指数历史成分股数据接入待做 |
 | Phase 6 平台交叉验证 | 已完成增强版初版 | 已新增 `cq/benchmark/cross_validation.py`、`scripts/run_cross_validation.py` 和 `docs/cross_validation_report.md`；可从本地/外部平台 CSV 直接加载、标准化常见字段别名、比较每日净值/持仓/成交并导出差异报告；真实外部平台样本对账待执行 |
-| Phase 7 模拟盘 / 实盘安全层 | 已完成初版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报和异常报警通道；Web/LiveEngine 深度接线、真实通知渠道仍待做 |
+| Phase 7 模拟盘 / 实盘安全层 | 已完成增强版初版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报和异常报警通道；安全层已接入 `LiveEngine` 和 `paper_trade` 信号入口；真实通知渠道和 Web 配置入口仍待做 |
 
 ## 下一步优化动作
 
@@ -1000,7 +1000,12 @@ TradePlan 支持 pending / approved / rejected 人工确认状态
 KillSwitch 可统一阻断新订单
 DailyLossGuard 可按单日亏损金额或比例阻断交易
 PaperExecutor 已接入订单幂等拦截
+SimulatedExecutor 已接入订单幂等拦截，供 paper_trade / 回测式模拟复用
 QMTExecutor 已预留同一套订单幂等入口
+LiveEngine.configure_safety() 已接入 KillSwitch / DailyLossGuard / OrderIdempotencyStore
+LiveEngine 会在 SignalEvent 进入执行器前做安全检查，拦截后生成 RejectEvent
+LiveEngine.run() 会把 idempotency store 传入 QMTExecutor
+LiveEngine.paper_trade() 会把 idempotency store 传入 SimulatedExecutor
 每日交易日报可从成交、权益曲线、持仓、风险提示生成 Markdown/JSON/CSV
 异常报警可发送到内存 sink 或 JSONL 文件，后续可扩展邮件/企业微信/飞书
 重启恢复状态可保存/加载 session 状态、幂等 key、待审批交易计划 id
@@ -1009,7 +1014,6 @@ QMTExecutor 已预留同一套订单幂等入口
 后续仍需：
 
 ```text
-将 KillSwitch / DailyLossGuard 接入 LiveEngine 主循环
 将 TradePlan 接入 Web 实盘启动和下单前确认流程
 将 LiveRecoveryStore 接入 Web / LiveEngine 启动恢复流程
 将每日交易日报接入 Web / 定时任务

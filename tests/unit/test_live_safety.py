@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from cq.core.event_bus import EventBus
-from cq.core.events import FillEvent, RejectEvent, SignalEvent
+from cq.core.events import FillEvent, OrderEvent, RejectEvent, SignalEvent
 from cq.core.models import Bar, OrderSide, OrderType, Signal
 from cq.engine.portfolio import PortfolioManager
 from cq.execution.paper import PaperExecutor
+from cq.execution.simulated import SimulatedExecutor
 from cq.live import (
     DailyLossGuard,
     KillSwitch,
@@ -134,3 +135,39 @@ def test_paper_executor_rejects_duplicate_order_intent():
     assert isinstance(first, FillEvent)
     assert isinstance(second, RejectEvent)
     assert "重复订单已拦截" in second.reason
+
+
+def test_simulated_executor_rejects_duplicate_order_intent():
+    bus = EventBus()
+    portfolio = PortfolioManager(EngineConfig(initial_capital=1_000_000))
+    portfolio.update_prices([
+        Bar(
+            symbol="600519.SH",
+            trade_date=date(2024, 1, 2),
+            open=100,
+            high=101,
+            low=99,
+            close=100,
+            volume=1_000_000,
+            amount=100_000_000,
+            limit_up=110,
+            limit_down=90,
+            pre_close=100,
+        )
+    ])
+    risk = PreTradeRisk(portfolio, RiskConfig())
+    store = OrderIdempotencyStore()
+    executor = SimulatedExecutor(bus, portfolio, risk, idempotency_store=store)
+    executor.set_current_date(date(2024, 1, 2))
+
+    seen_events = []
+    bus.subscribe(OrderEvent, seen_events.append)
+    bus.subscribe(RejectEvent, seen_events.append)
+
+    executor.on_signal(SignalEvent(signal=_signal("S1")))
+    executor.on_signal(SignalEvent(signal=_signal("S2")))
+    bus.dispatch_all()
+
+    assert isinstance(seen_events[0], OrderEvent)
+    assert isinstance(seen_events[1], RejectEvent)
+    assert "重复订单已拦截" in seen_events[1].reason

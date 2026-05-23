@@ -13,9 +13,8 @@
 
 from __future__ import annotations
 
-import queue
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -25,10 +24,10 @@ from cq.core.events import FillEvent, RejectEvent, SignalEvent
 from cq.core.models import Bar, OrderSide, OrderType, Signal, new_signal_id
 from cq.engine.portfolio import PortfolioManager
 from cq.execution.paper import PaperExecutor
+from cq.live import KillSwitch
 from cq.risk.pre_trade import PreTradeRisk
-from cq.strategy.base import Strategy, StrategyContext
+from cq.strategy.base import Strategy
 from cq.utils.config import Config, EngineConfig, RiskConfig
-
 
 # ── 测试用 fixture ──────────────────────────────────────────────────────────────
 
@@ -78,7 +77,7 @@ def make_price_series() -> list[Bar]:
         101, 100, 98, 97,
     ]
     bars = []
-    for i, (d, p) in enumerate(zip(TRADE_DATES, prices)):
+    for i, (d, p) in enumerate(zip(TRADE_DATES, prices, strict=True)):
         pre = prices[i - 1] if i > 0 else p
         bars.append(make_bar(SYMBOL, d, float(p), float(pre)))
     return bars
@@ -428,3 +427,29 @@ class TestLivePaperTrade:
         assert len(fills) >= 1, "买入应该成功"
         # 当日卖出时 tradeable_qty=0，应被风控拒绝（quantity 为 0）
         assert len(rejects) >= 1, "当日买入后立即卖出应被风控拒绝（T+1 约束）"
+
+    def test_paper_trade_kill_switch_blocks_new_orders(self, default_config, price_bars):
+        """LiveEngine 安全层：kill switch 开启时，信号应在进入执行器前被拒绝。"""
+        from cq.live.engine import LiveEngine
+
+        rejects = []
+        fills = []
+
+        class _CountingStrategy(SimpleBuyHoldStrategy):
+            strategy_id = "simple_buy_hold_kill_switch"
+
+            def on_order_update(self, event):
+                if isinstance(event, FillEvent):
+                    fills.append(event)
+                elif isinstance(event, RejectEvent):
+                    rejects.append(event)
+
+        store = self._make_mock_store(price_bars)
+        engine = LiveEngine(default_config)
+        engine.configure_safety(kill_switch=KillSwitch(enabled=True, reason="manual stop"))
+        engine.add_strategy(_CountingStrategy(), symbols=[SYMBOL])
+        engine.paper_trade(store=store, start_date=TRADE_DATES[0], end_date=TRADE_DATES[-1])
+
+        assert fills == []
+        assert len(rejects) >= 1
+        assert "安全层拦截: manual stop" in rejects[0].reason

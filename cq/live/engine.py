@@ -40,6 +40,7 @@ from cq.data.feed.historical import HistoricalFeed
 from cq.data.feed.realtime import RealtimeFeed
 from cq.data.store.parquet_store import ParquetStore
 from cq.engine.portfolio import PortfolioManager
+from cq.live.safety import DailyLossGuard, KillSwitch, OrderIdempotencyStore
 from cq.risk.pre_trade import PreTradeRisk
 from cq.strategy.base import Strategy, StrategyContext
 from cq.utils.config import Config
@@ -91,12 +92,32 @@ class LiveEngine:
         # 供外部（如 Web 层）读取实时状态
         self._portfolio: PortfolioManager | None = None
         self._bus: EventBus | None = None
+        self._kill_switch = KillSwitch()
+        self._daily_loss_guard = DailyLossGuard()
+        self._idempotency_store: OrderIdempotencyStore | None = None
+        self._daily_safety_date: date | None = None
+        self._daily_start_assets: float | None = None
 
     def add_strategy(self, strategy: Strategy, symbols: list[str]) -> None:
         if not strategy.strategy_id:
             raise ValueError("strategy.strategy_id 不能为空")
         self._strategy = strategy
         self._symbols = list(symbols)
+
+    def configure_safety(
+        self,
+        *,
+        kill_switch: KillSwitch | None = None,
+        daily_loss_guard: DailyLossGuard | None = None,
+        idempotency_store: OrderIdempotencyStore | None = None,
+    ) -> None:
+        """Configure live/paper safety guards before starting the engine."""
+        if kill_switch is not None:
+            self._kill_switch = kill_switch
+        if daily_loss_guard is not None:
+            self._daily_loss_guard = daily_loss_guard
+        if idempotency_store is not None:
+            self._idempotency_store = idempotency_store
 
     # ── 运行模式 ──────────────────────────────────────────────────────────────────
 
@@ -126,6 +147,8 @@ class LiveEngine:
             account_id=live_cfg.account_id,
             mini_qmt_dir=live_cfg.mini_qmt_dir,
             session_id=live_cfg.session_id,
+            idempotency_store=self._idempotency_store,
+            idempotency_namespace=f"qmt:{live_cfg.account_id}:{self._strategy.strategy_id}",
         )
         feed = QMTRealtimeFeed(
             data_dir=live_cfg.mini_qmt_dir,
@@ -163,7 +186,13 @@ class LiveEngine:
 
         feed = ctx._feed  # HistoricalFeed，覆盖 history_start → end_date
         calendar = self._load_calendar(store, fallback_days=feed.trade_dates)
-        executor = SimulatedExecutor(bus=bus, portfolio=portfolio, risk=risk)
+        executor = SimulatedExecutor(
+            bus=bus,
+            portfolio=portfolio,
+            risk=risk,
+            idempotency_store=self._idempotency_store,
+            idempotency_namespace=f"paper_trade:{self._strategy.strategy_id}",
+        )
         matching = BarMatchingEngine(bus, portfolio, calendar, self._config.engine)
 
         logger.info(
@@ -212,6 +241,7 @@ class LiveEngine:
                     executor.set_current_date(trade_date)
                     ctx._set_date(trade_date)
                     executor.sync_positions()
+                    self._start_safety_day(trade_date, portfolio)
                     synced = True
 
                 if t >= _TIME_OPEN and not before_done:
@@ -284,6 +314,7 @@ class LiveEngine:
             # 步骤 3：更新持仓市值
             portfolio.update_prices(bars)
             risk.update_equity_state(trade_date)
+            self._start_safety_day(trade_date, portfolio)
 
             # 步骤 4：日初回调 + 推送 BarEvent
             executor.set_current_date(trade_date)
@@ -351,19 +382,55 @@ class LiveEngine:
 
     # ── 静态工具 ──────────────────────────────────────────────────────────────────
 
-    @staticmethod
     def _register_handlers(
+        self,
         bus: EventBus,
         portfolio: PortfolioManager,
         executor: _Executor,
         strategy: Strategy,
     ) -> None:
         bus.subscribe(BarEvent, lambda e: strategy.on_bar(e.bar))
-        bus.subscribe(SignalEvent, executor.on_signal)
+        bus.subscribe(SignalEvent, lambda e: self._handle_signal(e, bus, portfolio, executor))
         bus.subscribe(FillEvent, portfolio.on_fill)
         bus.subscribe(FillEvent, strategy.on_order_update)
         bus.subscribe(RejectEvent, strategy.on_order_update)
         bus.subscribe(EndOfDayEvent, portfolio.settle_eod)
+
+    def _handle_signal(
+        self,
+        event: SignalEvent,
+        bus: EventBus,
+        portfolio: PortfolioManager,
+        executor: _Executor,
+    ) -> None:
+        reason = self._safety_reject_reason(portfolio)
+        if reason:
+            bus.put(RejectEvent(order_id=event.signal.signal_id, reason=reason))
+            logger.warning(f"安全层拦截信号 {event.signal.symbol}: {reason}")
+            return
+        executor.on_signal(event)
+
+    def _start_safety_day(self, trade_date: date, portfolio: PortfolioManager) -> None:
+        if self._daily_safety_date == trade_date:
+            return
+        self._daily_safety_date = trade_date
+        self._daily_start_assets = portfolio.get_total_assets()
+
+    def _safety_reject_reason(self, portfolio: PortfolioManager) -> str:
+        kill_switch_result = self._kill_switch.check()
+        if not kill_switch_result.passed:
+            return f"安全层拦截: {kill_switch_result.reason}"
+
+        if self._daily_start_assets is None:
+            return ""
+
+        loss_result = self._daily_loss_guard.check(
+            start_assets=self._daily_start_assets,
+            current_assets=portfolio.get_total_assets(),
+        )
+        if not loss_result.passed:
+            return f"安全层拦截: {loss_result.reason}"
+        return ""
 
     @staticmethod
     def _drain_executor_events(eq: queue.Queue, bus: EventBus) -> None:

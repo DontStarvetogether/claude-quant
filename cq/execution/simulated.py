@@ -7,14 +7,15 @@ SimulatedExecutor：模拟执行器（回测专用）。
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 from loguru import logger
 
 from cq.core.event_bus import EventBus
 from cq.core.events import OrderEvent, RejectEvent, SignalEvent
-from cq.core.models import Order, OrderSide, OrderStatus, OrderType, Signal, new_order_id
+from cq.core.models import Order, OrderSide, OrderStatus, Signal, new_order_id
 from cq.engine.portfolio import PortfolioManager
+from cq.live.safety import OrderIdempotencyStore, OrderIntent
 from cq.risk.pre_trade import PreTradeRisk
 from cq.utils.trading_rules import AStockRules
 
@@ -31,10 +32,14 @@ class SimulatedExecutor:
         bus: EventBus,
         portfolio: PortfolioManager,
         risk: PreTradeRisk,
+        idempotency_store: OrderIdempotencyStore | None = None,
+        idempotency_namespace: str = "simulated",
     ) -> None:
         self._bus = bus
         self._portfolio = portfolio
         self._risk = risk
+        self._idempotency_store = idempotency_store
+        self._idempotency_namespace = idempotency_namespace
         self._current_date: date | None = None
 
     def set_current_date(self, trade_date: date) -> None:
@@ -45,6 +50,20 @@ class SimulatedExecutor:
     def on_signal(self, event: SignalEvent) -> None:
         """处理 SignalEvent：风控 → 股数计算 → 发出 OrderEvent。"""
         signal = event.signal
+        trade_date = self._current_date or date.today()
+        intent = OrderIntent.from_signal(
+            signal,
+            quantity=signal.quantity or 0,
+            trade_date=trade_date,
+            namespace=self._idempotency_namespace,
+        )
+        if self._idempotency_store is not None and self._idempotency_store.seen(intent.key):
+            self._bus.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"重复订单已拦截 {signal.symbol}: {intent.key}")
+            return
 
         # 风控检查
         passed, reason, clamped = self._risk.check(signal)
@@ -65,6 +84,14 @@ class SimulatedExecutor:
             ))
             return
 
+        if self._idempotency_store is not None and not self._idempotency_store.register(intent.key):
+            self._bus.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"重复订单已拦截 {signal.symbol}: {intent.key}")
+            return
+
         order = Order(
             order_id=new_order_id(),
             signal_id=signal.signal_id,
@@ -73,7 +100,7 @@ class SimulatedExecutor:
             order_type=signal.order_type,
             quantity=quantity,
             limit_price=signal.limit_price,
-            trade_date=self._current_date or date.today(),
+            trade_date=trade_date,
             allow_partial_fill=signal.quantity is None,
             status=OrderStatus.PENDING,
             created_at=event.timestamp,
