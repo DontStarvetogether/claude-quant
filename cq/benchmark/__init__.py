@@ -2,11 +2,13 @@
 
 from cq.benchmark.cross_validation import (
     CrossValidationExport,
+    CrossValidationInputFiles,
     CrossValidationResult,
     CrossValidationTolerance,
     compare_benchmark_with_external,
     export_cross_validation_result,
     generate_cross_validation_report,
+    load_cross_validation_frames,
 )
 from cq.benchmark.momentum_topn import (
     BenchmarkResult,
@@ -28,6 +30,7 @@ __all__ = [
     "BenchmarkResult",
     "BenchmarkSummary",
     "CrossValidationExport",
+    "CrossValidationInputFiles",
     "CrossValidationResult",
     "CrossValidationTolerance",
     "MomentumTopNConfig",
@@ -36,6 +39,7 @@ __all__ = [
     "export_cross_validation_result",
     "generate_benchmark_report",
     "generate_cross_validation_report",
+    "load_cross_validation_frames",
     "run_momentum_topn_benchmark",
     "summarize_benchmark_result",
 ]

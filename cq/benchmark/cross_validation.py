@@ -46,6 +46,15 @@ class CrossValidationExport:
     summary: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CrossValidationInputFiles:
+    """CSV files exported by a local benchmark run or an external platform."""
+
+    equity_curve: Path | None = None
+    holdings: Path | None = None
+    trades: Path | None = None
+
+
 def compare_benchmark_with_external(
     local: BenchmarkResult | Mapping[str, pd.DataFrame],
     external: Mapping[str, pd.DataFrame],
@@ -75,6 +84,40 @@ def compare_benchmark_with_external(
     summary = _build_summary(equity, holdings, trades, tol, platform_name)
     markdown = generate_cross_validation_report(summary, equity, holdings, trades)
     return CrossValidationResult(summary=summary, equity=equity, holdings=holdings, trades=trades, markdown=markdown)
+
+
+def load_cross_validation_frames(
+    files: CrossValidationInputFiles,
+    *,
+    encoding: str = "utf-8",
+    source_name: str = "external",
+) -> dict[str, pd.DataFrame]:
+    """Load CSV exports and standardize common external-platform column names.
+
+    The canonical output keys match ``BenchmarkResult`` exports:
+
+    - ``equity_curve``: date,total_assets,cash,position_value
+    - ``holdings``: date,symbol,quantity,market_value
+    - ``trades``: trade_date,symbol,side,quantity,price,amount,commission,stamp_tax,net_amount
+    """
+
+    frames: dict[str, pd.DataFrame] = {}
+    if files.equity_curve is not None:
+        frames["equity_curve"] = _standardize_equity_frame(
+            pd.read_csv(files.equity_curve, encoding=encoding),
+            source_name=source_name,
+        )
+    if files.holdings is not None:
+        frames["holdings"] = _standardize_holdings_frame(
+            pd.read_csv(files.holdings, encoding=encoding),
+            source_name=source_name,
+        )
+    if files.trades is not None:
+        frames["trades"] = _standardize_trades_frame(
+            pd.read_csv(files.trades, encoding=encoding),
+            source_name=source_name,
+        )
+    return frames
 
 
 def export_cross_validation_result(
@@ -185,6 +228,172 @@ def _frames_from_input(source: BenchmarkResult | Mapping[str, pd.DataFrame]) -> 
             "signals": source.signals,
         }
     return {key: frame for key, frame in source.items()}
+
+
+def _standardize_equity_frame(df: pd.DataFrame, *, source_name: str) -> pd.DataFrame:
+    data = _standardize_columns(
+        df,
+        frame_name="equity_curve",
+        source_name=source_name,
+        aliases={
+            "date": ["trade_date", "datetime", "time", "day", "日期", "交易日期"],
+            "total_assets": [
+                "total_value",
+                "portfolio_value",
+                "net_value",
+                "nav",
+                "account_value",
+                "assets",
+                "asset",
+                "总资产",
+                "账户总资产",
+                "净值",
+            ],
+            "cash": ["available_cash", "cash_balance", "available", "现金", "可用资金", "持有现金"],
+            "position_value": [
+                "positions_value",
+                "market_value",
+                "stock_value",
+                "securities_value",
+                "持仓市值",
+                "证券市值",
+            ],
+        },
+        required=["date", "total_assets"],
+    )
+    if "cash" not in data.columns:
+        data["cash"] = 0.0
+    if "position_value" not in data.columns:
+        data["position_value"] = pd.to_numeric(data["total_assets"], errors="coerce").fillna(0.0) - pd.to_numeric(
+            data["cash"],
+            errors="coerce",
+        ).fillna(0.0)
+    return data[["date", "total_assets", "cash", "position_value"]]
+
+
+def _standardize_holdings_frame(df: pd.DataFrame, *, source_name: str) -> pd.DataFrame:
+    data = _standardize_columns(
+        df,
+        frame_name="holdings",
+        source_name=source_name,
+        aliases={
+            "date": ["trade_date", "datetime", "time", "day", "日期", "交易日期"],
+            "symbol": ["code", "security", "order_book_id", "instrument", "stock", "股票代码", "证券代码"],
+            "quantity": ["shares", "volume", "position", "qty", "持仓数量", "股份数量", "数量"],
+            "market_value": ["value", "position_value", "stock_value", "市值", "持仓市值", "证券市值"],
+        },
+        required=["date", "symbol", "quantity"],
+    )
+    if "market_value" not in data.columns:
+        data["market_value"] = 0.0
+    return data[["date", "symbol", "quantity", "market_value"]]
+
+
+def _standardize_trades_frame(df: pd.DataFrame, *, source_name: str) -> pd.DataFrame:
+    data = _standardize_columns(
+        df,
+        frame_name="trades",
+        source_name=source_name,
+        aliases={
+            "trade_date": ["date", "datetime", "time", "day", "日期", "交易日期", "成交日期"],
+            "symbol": ["code", "security", "order_book_id", "instrument", "stock", "股票代码", "证券代码"],
+            "side": ["action", "direction", "operation", "买卖方向", "交易方向", "操作"],
+            "quantity": ["shares", "volume", "qty", "成交数量", "股份数量", "数量"],
+            "price": ["成交价格", "成交价", "价格"],
+            "amount": ["turnover", "trade_amount", "成交金额", "交易金额", "金额"],
+            "commission": ["fee", "手续费", "佣金"],
+            "stamp_tax": ["tax", "印花税"],
+            "net_amount": ["net_turnover", "net_value", "净成交金额", "净额"],
+        },
+        required=["trade_date", "symbol", "side", "quantity", "price"],
+    )
+    data["side"] = _standardize_side(data["side"], source_name=source_name)
+    quantity = pd.to_numeric(data["quantity"], errors="coerce").fillna(0.0)
+    price = pd.to_numeric(data["price"], errors="coerce").fillna(0.0)
+    if "amount" not in data.columns:
+        data["amount"] = quantity * price
+    if "commission" not in data.columns:
+        data["commission"] = 0.0
+    if "stamp_tax" not in data.columns:
+        data["stamp_tax"] = 0.0
+    if "net_amount" not in data.columns:
+        amount = pd.to_numeric(data["amount"], errors="coerce").fillna(0.0)
+        commission = pd.to_numeric(data["commission"], errors="coerce").fillna(0.0)
+        stamp_tax = pd.to_numeric(data["stamp_tax"], errors="coerce").fillna(0.0)
+        data["net_amount"] = amount.where(data["side"] == "SELL", amount + commission)
+        data.loc[data["side"] == "SELL", "net_amount"] = amount - commission - stamp_tax
+    return data[
+        [
+            "trade_date",
+            "symbol",
+            "side",
+            "quantity",
+            "price",
+            "amount",
+            "commission",
+            "stamp_tax",
+            "net_amount",
+        ]
+    ]
+
+
+def _standardize_columns(
+    df: pd.DataFrame,
+    *,
+    frame_name: str,
+    source_name: str,
+    aliases: Mapping[str, list[str]],
+    required: list[str],
+) -> pd.DataFrame:
+    data = df.copy()
+    rename_map: dict[str, str] = {}
+    for canonical, candidates in aliases.items():
+        source_col = _find_column(data.columns, [canonical, *candidates])
+        if source_col is None:
+            if canonical in required:
+                raise ValueError(f"{source_name} {frame_name} missing required column: {canonical}")
+            continue
+        if source_col != canonical:
+            rename_map[source_col] = canonical
+    if rename_map:
+        data = data.rename(columns=rename_map)
+    return data
+
+
+def _find_column(columns: pd.Index, candidates: list[str]) -> str | None:
+    by_normalized = {_normalize_col_name(col): str(col) for col in columns}
+    for candidate in candidates:
+        found = by_normalized.get(_normalize_col_name(candidate))
+        if found is not None:
+            return found
+    return None
+
+
+def _normalize_col_name(value: object) -> str:
+    return str(value).strip().lower().replace(" ", "_")
+
+
+def _standardize_side(series: pd.Series, *, source_name: str) -> pd.Series:
+    mapping = {
+        "BUY": "BUY",
+        "B": "BUY",
+        "买": "BUY",
+        "买入": "BUY",
+        "限价买入": "BUY",
+        "市价买入": "BUY",
+        "SELL": "SELL",
+        "S": "SELL",
+        "卖": "SELL",
+        "卖出": "SELL",
+        "限价卖出": "SELL",
+        "市价卖出": "SELL",
+    }
+    normalized = series.astype(str).str.strip()
+    standardized = normalized.map(lambda value: mapping.get(value.upper(), mapping.get(value, "")))
+    bad_values = sorted(set(normalized[standardized == ""]))
+    if bad_values:
+        raise ValueError(f"{source_name} trades contains unsupported side values: {bad_values}")
+    return standardized
 
 
 def _normalize_by_date(df: pd.DataFrame, date_col: str, numeric_cols: list[str]) -> pd.DataFrame:

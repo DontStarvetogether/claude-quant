@@ -41,7 +41,27 @@ trades: trade_date,symbol,side,quantity,price,amount,commission,stamp_tax,net_am
 
 ## 3. 自动对账输出
 
-使用 `cq.benchmark.compare_benchmark_with_external()` 后应保存：
+推荐直接使用 CLI：
+
+```bash
+python scripts/run_cross_validation.py \
+  --local-dir output/benchmark/local \
+  --external-dir output/benchmark/joinquant \
+  --output-dir output/cross_validation/joinquant \
+  --platform-name JoinQuant
+```
+
+目录输入默认读取：
+
+```text
+equity_curve.csv
+holdings.csv
+trades.csv
+```
+
+也可以使用 `--local-equity-csv`、`--external-trades-csv` 等显式指定文件。
+
+CLI 内部使用 `cq.benchmark.load_cross_validation_frames()` 标准化常见外部平台字段别名，再调用 `compare_benchmark_with_external()`。对账完成后应保存：
 
 ```text
 cross_validation_summary.json

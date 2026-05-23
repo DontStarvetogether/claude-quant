@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 
 import pandas as pd
+from click.testing import CliRunner
 
 from cq.benchmark import (
     BenchmarkResult,
+    CrossValidationInputFiles,
     CrossValidationTolerance,
     compare_benchmark_with_external,
     export_cross_validation_result,
+    load_cross_validation_frames,
 )
+from scripts.run_cross_validation import main as run_cross_validation_main
 
 
 def _benchmark_result() -> BenchmarkResult:
@@ -107,3 +111,135 @@ def test_export_cross_validation_result_writes_standard_files(tmp_path):
     assert payload["passed"] is True
     assert payload["schema_version"] == "cross_validation.v1"
     assert exported.files["report"].read_text(encoding="utf-8").startswith("# 平台交叉验证报告")
+
+
+def test_load_cross_validation_frames_standardizes_common_platform_aliases(tmp_path):
+    equity_csv = tmp_path / "equity.csv"
+    holdings_csv = tmp_path / "holdings.csv"
+    trades_csv = tmp_path / "trades.csv"
+
+    pd.DataFrame(
+        [
+            {
+                "交易日期": "2024-01-03",
+                "总资产": 1_010_000.0,
+                "可用资金": 500_000.0,
+                "持仓市值": 510_000.0,
+            }
+        ]
+    ).to_csv(equity_csv, index=False)
+    pd.DataFrame(
+        [
+            {
+                "日期": "2024-01-03",
+                "证券代码": "000001.sz",
+                "持仓数量": 10_000,
+                "市值": 102_000.0,
+            }
+        ]
+    ).to_csv(holdings_csv, index=False)
+    pd.DataFrame(
+        [
+            {
+                "成交日期": "2024-01-03",
+                "证券代码": "000001.sz",
+                "买卖方向": "买入",
+                "成交数量": 10_000,
+                "成交价格": 10.0,
+                "手续费": 30.0,
+            }
+        ]
+    ).to_csv(trades_csv, index=False)
+
+    frames = load_cross_validation_frames(
+        CrossValidationInputFiles(
+            equity_curve=equity_csv,
+            holdings=holdings_csv,
+            trades=trades_csv,
+        ),
+        source_name="JoinQuant",
+    )
+
+    assert list(frames["equity_curve"].columns) == ["date", "total_assets", "cash", "position_value"]
+    assert list(frames["holdings"].columns) == ["date", "symbol", "quantity", "market_value"]
+    assert list(frames["trades"].columns) == [
+        "trade_date",
+        "symbol",
+        "side",
+        "quantity",
+        "price",
+        "amount",
+        "commission",
+        "stamp_tax",
+        "net_amount",
+    ]
+    trade = frames["trades"].iloc[0]
+    assert trade["side"] == "BUY"
+    assert trade["amount"] == 100_000.0
+    assert trade["net_amount"] == 100_030.0
+
+
+def test_run_cross_validation_script_compares_export_directories(tmp_path):
+    result = _benchmark_result()
+    local_dir = tmp_path / "local"
+    external_dir = tmp_path / "external"
+    output_dir = tmp_path / "comparison"
+    local_dir.mkdir()
+    external_dir.mkdir()
+
+    result.equity_curve.to_csv(local_dir / "equity_curve.csv", index=False)
+    result.holdings.to_csv(local_dir / "holdings.csv", index=False)
+    result.trades.to_csv(local_dir / "trades.csv", index=False)
+
+    result.equity_curve.rename(
+        columns={
+            "date": "交易日期",
+            "total_assets": "总资产",
+            "cash": "可用资金",
+            "position_value": "持仓市值",
+        }
+    ).to_csv(external_dir / "equity_curve.csv", index=False)
+    result.holdings.rename(
+        columns={
+            "date": "日期",
+            "symbol": "证券代码",
+            "quantity": "持仓数量",
+            "market_value": "市值",
+        }
+    )[["日期", "证券代码", "持仓数量", "市值"]].to_csv(external_dir / "holdings.csv", index=False)
+    result.trades.rename(
+        columns={
+            "trade_date": "成交日期",
+            "symbol": "证券代码",
+            "side": "买卖方向",
+            "quantity": "成交数量",
+            "price": "成交价格",
+            "amount": "成交金额",
+            "commission": "手续费",
+            "stamp_tax": "印花税",
+            "net_amount": "净成交金额",
+        }
+    ).replace({"买卖方向": {"BUY": "买入", "SELL": "卖出"}}).to_csv(
+        external_dir / "trades.csv",
+        index=False,
+    )
+
+    cli_result = CliRunner().invoke(
+        run_cross_validation_main,
+        [
+            "--local-dir",
+            str(local_dir),
+            "--external-dir",
+            str(external_dir),
+            "--output-dir",
+            str(output_dir),
+            "--platform-name",
+            "JoinQuant",
+        ],
+    )
+
+    assert cli_result.exit_code == 0, cli_result.output
+    summary = json.loads((output_dir / "cross_validation_summary.json").read_text(encoding="utf-8"))
+    assert summary["passed"] is True
+    assert summary["platform_name"] == "JoinQuant"
+    assert (output_dir / "cross_validation_report.md").exists()
