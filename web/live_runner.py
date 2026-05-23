@@ -14,19 +14,20 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
-from cq.core.events import BarEvent, EndOfDayEvent, FillEvent, RejectEvent
+from cq.core.events import BarEvent, EndOfDayEvent, FillEvent
 from cq.core.models import OrderSide, Trade
 from cq.data.store.parquet_store import ParquetStore
+from cq.live import LiveRecoveryStore, OrderIdempotencyStore
 from cq.live.engine import LiveEngine
 from cq.performance.metrics import PerformanceMetrics
 from cq.strategy.registry import load_strategy
 from cq.utils.config import Config
-from web.runner import _ensure_data
 from web import db
+from web.runner import _ensure_data
 
 
 @dataclass
@@ -39,24 +40,24 @@ class LiveSession:
     started_at: datetime = field(default_factory=datetime.now)
 
     # 实时状态（主线程读，引擎线程写，CPython GIL 保护）
-    current_date: Optional[str] = None
-    total_assets: Optional[float] = None
-    cash: Optional[float] = None
+    current_date: str | None = None
+    total_assets: float | None = None
+    cash: float | None = None
     initial_capital: float = 1_000_000
     positions: list[dict] = field(default_factory=list)
     recent_trades: deque[dict] = field(default_factory=lambda: deque(maxlen=50))
     elapsed_seconds: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
     # 内部引用（不序列化）
-    engine: Optional[LiveEngine] = field(default=None, repr=False)
-    thread: Optional[threading.Thread] = field(default=None, repr=False)
+    engine: LiveEngine | None = field(default=None, repr=False)
+    thread: threading.Thread | None = field(default=None, repr=False)
     _start_time: float = field(default=0.0, repr=False)
 
 
 class LiveSessionStore:
     """单例内存存储。"""
-    _instance: Optional[LiveSessionStore] = None
+    _instance: LiveSessionStore | None = None
 
     def __new__(cls) -> LiveSessionStore:
         if cls._instance is None:
@@ -69,7 +70,7 @@ class LiveSessionStore:
         self._sessions[session.session_id] = session
         return session
 
-    def get(self, session_id: str) -> Optional[LiveSession]:
+    def get(self, session_id: str) -> LiveSession | None:
         return self._sessions.get(session_id)
 
     def remove(self, session_id: str) -> bool:
@@ -131,7 +132,7 @@ def start_live_session(
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
     account_id: str,
-    mini_qmt_dir: Optional[str] = None,
+    mini_qmt_dir: str | None = None,
     config_path: str = "config/local.yaml",
 ) -> LiveSession:
     """启动实盘会话，返回 LiveSession。"""
@@ -179,6 +180,33 @@ def stop_session(session_id: str) -> bool:
 # ── 内部实现 ──────────────────────────────────────────────────────────────────
 
 
+def _configure_engine_state(
+    engine: LiveEngine,
+    config: Config,
+    session: LiveSession,
+    *,
+    account_id: str | None = None,
+) -> None:
+    """Configure persistent safety/recovery state for Web-started sessions."""
+    state_root = config.data.root_path / "live_state"
+    idempotency_store = OrderIdempotencyStore(
+        state_root / "idempotency" / f"{session.session_id}.json"
+    )
+    recovery_store = LiveRecoveryStore(state_root / "recovery")
+    engine.configure_safety(idempotency_store=idempotency_store)
+    engine.configure_recovery(
+        recovery_store=recovery_store,
+        session_id=session.session_id,
+        metadata={
+            "mode": session.mode,
+            "strategy_id": session.strategy_id,
+            "symbols": list(session.symbols),
+            "account_id": account_id or "",
+            "started_at": session.started_at.isoformat(),
+        },
+    )
+
+
 def _run_paper(
     session: LiveSession,
     start_date: str,
@@ -203,6 +231,7 @@ def _run_paper(
 
         store = ParquetStore(config.data.root_path)
         engine = LiveEngine(config)
+        _configure_engine_state(engine, config, session)
         engine.add_strategy(strategy, symbols=session.symbols)
         session.engine = engine
 
@@ -263,7 +292,7 @@ def _run_paper(
 def _run_live(
     session: LiveSession,
     account_id: str,
-    mini_qmt_dir: Optional[str],
+    mini_qmt_dir: str | None,
     strategy_params: dict[str, Any],
     risk_params: dict[str, Any],
     config_path: str,
@@ -284,6 +313,7 @@ def _run_live(
         strategy = load_strategy(session.strategy_id, strategy_params)
 
         engine = LiveEngine(config)
+        _configure_engine_state(engine, config, session, account_id=account_id)
         engine.add_strategy(strategy, symbols=session.symbols)
         session.engine = engine
 
@@ -407,9 +437,9 @@ def _sync_portfolio_state(session: LiveSession, engine: LiveEngine) -> None:
 def _compute_metrics(session_id: str) -> dict | None:
     """从 DB 加载净值曲线和成交记录，计算绩效指标。
     返回 {"metrics": {...}, "equity": {dates/values/drawdown}} 或 None。"""
-    import json
-    import pandas as pd
     from datetime import datetime
+
+    import pandas as pd
 
     equity_rows = db.get_equity_curve(session_id)
     trade_rows = db.get_trades(session_id)
