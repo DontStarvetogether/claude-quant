@@ -7,6 +7,7 @@ from cq.live.alerts import (
     AlertSink,
     InMemoryAlertSink,
     JsonlAlertSink,
+    WebhookAlertSink,
 )
 from cq.live.recovery import LiveRecoveryState, LiveRecoveryStore
 from cq.live.report import (
@@ -41,6 +42,7 @@ __all__ = [
     "OrderIntent",
     "SafetyCheckResult",
     "TradePlan",
+    "WebhookAlertSink",
     "export_daily_trading_report",
     "generate_daily_trading_report",
 ]

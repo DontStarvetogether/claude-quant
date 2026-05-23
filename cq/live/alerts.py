@@ -10,6 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 from typing import Any, Protocol
+from urllib.request import Request, urlopen
 
 SCHEMA_VERSION = "live_alert.v1"
 
@@ -76,6 +77,36 @@ class JsonlAlertSink:
         line = json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True)
         with self._lock, self._path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
+
+
+class WebhookAlertSink:
+    """Send alerts to a generic JSON webhook endpoint."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        timeout: float = 5.0,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self._url = url
+        self._timeout = timeout
+        self._headers = {"Content-Type": "application/json", **dict(headers or {})}
+
+    def send(self, event: AlertEvent) -> None:
+        payload = {
+            "text": f"[{event.level.value}] {event.title}\n{event.message}",
+            "event": event.to_dict(),
+        }
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request = Request(
+            self._url,
+            data=data,
+            headers=self._headers,
+            method="POST",
+        )
+        with urlopen(request, timeout=self._timeout) as response:
+            response.read()
 
 
 class AlertManager:
