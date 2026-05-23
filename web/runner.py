@@ -53,10 +53,16 @@ def _build_universe_diagnostics(
     universe_id = requested_universe or "custom_static"
     universe_name = "自定义静态股票池"
     source = "user_selection"
+    construction = "static"
     warnings: list[str] = []
     notes: list[str] = []
 
-    if requested_universe:
+    if isinstance(requested_universe, dict):
+        universe_id = requested_universe.get("universe_id") or universe_id
+        universe_name = requested_universe.get("universe_name") or universe_name
+        source = requested_universe.get("source") or "request"
+        construction = requested_universe.get("construction") or "static"
+    elif requested_universe:
         universe_name = str(requested_universe)
         source = "request"
 
@@ -76,7 +82,7 @@ def _build_universe_diagnostics(
         "universe_id": universe_id,
         "universe_name": universe_name,
         "source": source,
-        "construction": "static",
+        "construction": construction,
         "selection_time": "run_submit",
         "symbol_count": symbol_count,
         "survivorship_bias_risk": risk,

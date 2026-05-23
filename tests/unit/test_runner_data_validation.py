@@ -88,3 +88,23 @@ def test_universe_diagnostics_marks_small_custom_pool_low_risk():
     assert diagnostics["symbol_count"] == 2
     assert diagnostics["survivorship_bias_risk"] == "low"
     assert diagnostics["warnings"] == []
+
+
+def test_universe_diagnostics_preserves_request_universe_metadata():
+    diagnostics = _build_universe_diagnostics(
+        "double_ma",
+        ["600519.SH", "000858.SZ"],
+        request={
+            "universe": {
+                "universe_id": "preset_bluechip",
+                "universe_name": "蓝筹稳健",
+                "source": "builtin_preset",
+                "construction": "static",
+            }
+        },
+    )
+
+    assert diagnostics["universe_id"] == "preset_bluechip"
+    assert diagnostics["universe_name"] == "蓝筹稳健"
+    assert diagnostics["source"] == "builtin_preset"
+    assert diagnostics["construction"] == "static"

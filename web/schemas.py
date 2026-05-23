@@ -41,6 +41,13 @@ class RiskParams(BaseModel):
     max_drawdown_stop: float = Field(default=0.15, ge=0.01, le=1.0)
 
 
+class BacktestUniverse(BaseModel):
+    universe_id: str = "custom_static"
+    universe_name: str = "自定义静态股票池"
+    source: str = "user_selection"
+    construction: str = "static"
+
+
 class BacktestRequest(BaseModel):
     strategy_id: str
     symbols: list[str] = Field(min_length=1)
@@ -53,6 +60,7 @@ class BacktestRequest(BaseModel):
     adjust: str = Field(default="dynamic", pattern="^(qfq|dynamic)$")
     enable_capacity_limit: bool = True
     max_volume_participation: float = Field(default=0.10, ge=0.0, le=1.0)
+    universe: Optional[BacktestUniverse] = None
     benchmark: Optional[str] = None   # 基准指数代码，如 "000300.SH"
 
 

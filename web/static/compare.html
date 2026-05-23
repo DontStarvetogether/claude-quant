@@ -199,8 +199,27 @@
   // ── 状态 ──────────────────────────────────────────────────────────────────
   let allStrategies = [];       // 从 API 拿到的策略定义
   let selectedSymbols = new Set();
+  let activeUniverse = customUniverse();
   let strategyRows = [];        // [{ id, color, params:{} }]
   let rowCounter = 0;
+
+  function customUniverse() {
+    return {
+      universe_id: 'custom_static',
+      universe_name: '自定义静态股票池',
+      source: 'user_selection',
+      construction: 'static',
+    };
+  }
+
+  function presetUniverse(preset) {
+    return {
+      universe_id: `preset_${preset.id}`,
+      universe_name: preset.label,
+      source: 'builtin_preset',
+      construction: 'static',
+    };
+  }
 
   // ── 初始化 ────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
@@ -265,6 +284,7 @@
     const available = new Set(allCompareSymbols.map(s => s.symbol));
     const symbols = preset.symbols.filter(sym => available.size === 0 || available.has(sym));
     selectedSymbols = new Set(symbols);
+    activeUniverse = presetUniverse(preset);
     renderSymbolTags();
     clearError();
 
@@ -338,13 +358,17 @@
 
     // 常用股票
     document.getElementById('quick-toggle-expand-btn')?.addEventListener('click', () => { quickExpanded = !quickExpanded; renderQuickSymbols(); });
-    document.getElementById('select-all-btn')?.addEventListener('click', () => { allCompareSymbols.slice(0, 50).forEach(s => selectedSymbols.add(s.symbol)); renderSymbolTags(); });
-    document.getElementById('clear-all-btn')?.addEventListener('click', () => { selectedSymbols.clear(); renderSymbolTags(); });
+    document.getElementById('select-all-btn')?.addEventListener('click', () => {
+      allCompareSymbols.slice(0, 50).forEach(s => selectedSymbols.add(s.symbol));
+      activeUniverse = { universe_id: 'local_top50_static', universe_name: '本地缓存前50只股票', source: 'local_cache', construction: 'static' };
+      renderSymbolTags();
+    });
+    document.getElementById('clear-all-btn')?.addEventListener('click', () => { selectedSymbols.clear(); activeUniverse = customUniverse(); renderSymbolTags(); });
   }
 
   function normalizeSym(s) { s = s.trim().toUpperCase(); if (/^\d{6}$/.test(s)) return s.startsWith('6') ? s + '.SH' : s + '.SZ'; return s; }
   function selectCompareSymbol(sym) { addCompareSymbol(sym); document.getElementById('symbol-input').value = ''; document.getElementById('symbol-dropdown').classList.add('hidden'); }
-  function addCompareSymbol(sym) { if (!sym) return; selectedSymbols.add(sym.toUpperCase()); renderSymbolTags(); }
+  function addCompareSymbol(sym) { if (!sym) return; selectedSymbols.add(sym.toUpperCase()); activeUniverse = customUniverse(); renderSymbolTags(); }
 
   function renderQuickSymbols() {
     const c = document.getElementById('quick-symbol-container');
@@ -362,7 +386,7 @@
     if (selectedSymbols.size === 0) { c.innerHTML = '<span class="text-xs text-gray-600">请搜索并添加股票</span>'; return; }
     c.innerHTML = [...selectedSymbols].map(sym => {
       const info = allCompareSymbols.find(s => s.symbol === sym);
-      return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300"><span class="font-mono">${sym}</span>${info ? '<span class="text-gray-500">' + info.name + '</span>' : ''}<button onclick="event.stopPropagation();selectedSymbols.delete('${sym}');renderSymbolTags()" class="ml-1 text-gray-500 hover:text-red-400">&times;</button></span>`;
+      return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300"><span class="font-mono">${sym}</span>${info ? '<span class="text-gray-500">' + info.name + '</span>' : ''}<button onclick="event.stopPropagation();selectedSymbols.delete('${sym}');activeUniverse=customUniverse();renderSymbolTags()" class="ml-1 text-gray-500 hover:text-red-400">&times;</button></span>`;
     }).join('');
   }
 
@@ -499,6 +523,7 @@
           risk: { max_position_pct: 0.95, min_cash_reserve: 0.05 },
           enable_capacity_limit: true,
           max_volume_participation: 0.10,
+          universe: activeUniverse,
         });
 
         await waitForCompletion(run_id, row.rowId, row.color);

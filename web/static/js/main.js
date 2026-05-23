@@ -8,6 +8,7 @@ let QUICK_SYMBOLS = [];
 // ── 状态 ─────────────────────────────────────────────────────────────────────
 let strategies = [];
 let selectedSymbols = new Set();
+let activeUniverse = customUniverse();
 let currentRunId = null;
 let sseSource = null;
 
@@ -79,6 +80,24 @@ const PERIOD_PRESETS = [
   { id: 'range_market', label: '震荡分化 2022-04~2023-12', start: '2022-04-27', end: '2023-12-29' },
   { id: 'long_cycle', label: '完整周期 2020~2024', start: '2020-01-01', end: '2024-12-31' },
 ];
+
+function customUniverse() {
+  return {
+    universe_id: 'custom_static',
+    universe_name: '自定义静态股票池',
+    source: 'user_selection',
+    construction: 'static',
+  };
+}
+
+function presetUniverse(preset) {
+  return {
+    universe_id: `preset_${preset.id}`,
+    universe_name: preset.label,
+    source: 'builtin_preset',
+    construction: 'static',
+  };
+}
 
 // ── 初始化 ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -154,6 +173,7 @@ function applySymbolPreset(presetId) {
   const available = new Set(QUICK_SYMBOLS.map(s => s.symbol));
   const symbols = preset.symbols.filter(sym => available.size === 0 || available.has(sym));
   selectedSymbols = new Set(symbols);
+  activeUniverse = presetUniverse(preset);
   updateSymbolDisplay();
   buildQuickSymbols();
 
@@ -405,6 +425,7 @@ function addSymbol(symbol) {
   }
   symbol = symbol.toUpperCase();
   selectedSymbols.add(symbol);
+  activeUniverse = customUniverse();
   updateSymbolDisplay();
   buildQuickSymbols();
   clearError();
@@ -412,6 +433,7 @@ function addSymbol(symbol) {
 
 function removeSymbol(symbol) {
   selectedSymbols.delete(symbol);
+  activeUniverse = customUniverse();
   updateSymbolDisplay();
   buildQuickSymbols();
 }
@@ -588,6 +610,7 @@ function buildQuickSymbols() {
       } else {
         selectedSymbols.add(sym);
       }
+      activeUniverse = customUniverse();
       updateSymbolDisplay();
       buildQuickSymbols(); // 重新渲染常用股票
     });
@@ -597,12 +620,19 @@ function buildQuickSymbols() {
 function setupSelectAll() {
   document.getElementById('select-all-btn').addEventListener('click', () => {
     QUICK_SYMBOLS.forEach(s => selectedSymbols.add(s.symbol));
+    activeUniverse = {
+      universe_id: 'local_all_static',
+      universe_name: '本地缓存全部股票',
+      source: 'local_cache',
+      construction: 'static',
+    };
     updateSymbolDisplay();
     buildQuickSymbols();
   });
 
   document.getElementById('clear-all-btn').addEventListener('click', () => {
     selectedSymbols.clear();
+    activeUniverse = customUniverse();
     updateSymbolDisplay();
     buildQuickSymbols();
   });
@@ -689,6 +719,7 @@ function setupForm() {
       adjust: document.getElementById('adjust-mode').value,
       enable_capacity_limit: document.getElementById('capacity-enabled')?.checked ?? true,
       max_volume_participation: parseInt(document.getElementById('capacity-participation')?.value || '10') / 100,
+      universe: activeUniverse,
       benchmark: document.getElementById('benchmark-select')?.value || null,
     };
 
