@@ -8,6 +8,7 @@ from cq.live.alerts import (
     InMemoryAlertSink,
     JsonlAlertSink,
 )
+from cq.live.recovery import LiveRecoveryState, LiveRecoveryStore
 from cq.live.report import (
     DailyTradingReport,
     DailyTradingReportExport,
@@ -34,6 +35,8 @@ __all__ = [
     "InMemoryAlertSink",
     "JsonlAlertSink",
     "KillSwitch",
+    "LiveRecoveryState",
+    "LiveRecoveryStore",
     "OrderIdempotencyStore",
     "OrderIntent",
     "SafetyCheckResult",
