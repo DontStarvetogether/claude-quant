@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import queue
 from datetime import date, datetime
-from typing import Optional
 
 from loguru import logger
 
@@ -33,6 +32,7 @@ from cq.core.models import (
     new_trade_id,
 )
 from cq.engine.portfolio import PortfolioManager
+from cq.live.safety import OrderIdempotencyStore, OrderIntent
 from cq.risk.pre_trade import PreTradeRisk
 from cq.utils.trading_rules import AStockRules
 
@@ -56,10 +56,12 @@ class QMTExecutor:
         account_id: str,
         mini_qmt_dir: str,
         session_id: int = 1,
+        idempotency_store: OrderIdempotencyStore | None = None,
+        idempotency_namespace: str | None = None,
     ) -> None:
         try:
+            from xtquant import xtconstant  # type: ignore[import-not-found]
             from xtquant.xttrader import XtQuantTrader  # type: ignore[import-not-found]
-            from xtquant import xtconstant              # type: ignore[import-not-found]
             self._trader = XtQuantTrader(mini_qmt_dir, session_id)
             self._xtconst = xtconstant
         except ImportError as exc:
@@ -71,6 +73,8 @@ class QMTExecutor:
         self._portfolio = portfolio
         self._risk = risk
         self._account_id = account_id
+        self._idempotency_store = idempotency_store
+        self._idempotency_namespace = idempotency_namespace or f"qmt:{account_id}"
         self._current_date: date = date.today()
 
         # 线程安全的事件队列（QMT 网络线程写，主线程读）
@@ -130,6 +134,19 @@ class QMTExecutor:
     def on_signal(self, event: SignalEvent) -> None:
         """处理 SignalEvent：风控 → 计算股数 → QMT 下单。"""
         signal = event.signal
+        intent = OrderIntent.from_signal(
+            signal,
+            quantity=signal.quantity or 0,
+            trade_date=self._current_date,
+            namespace=self._idempotency_namespace,
+        )
+        if self._idempotency_store is not None and self._idempotency_store.seen(intent.key):
+            self.event_queue.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"重复订单已拦截 {signal.symbol}: {intent.key}")
+            return
 
         # 风控检查
         passed, reason, clamped = self._risk.check(signal)
@@ -146,6 +163,14 @@ class QMTExecutor:
                 order_id=signal.signal_id,
                 reason="计算后股数为零（资金不足或价格过高）",
             ))
+            return
+
+        if self._idempotency_store is not None and not self._idempotency_store.register(intent.key):
+            self.event_queue.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"重复订单已拦截 {signal.symbol}: {intent.key}")
             return
 
         our_order_id = new_order_id()

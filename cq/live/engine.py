@@ -28,7 +28,7 @@ import queue
 import threading
 import time
 from datetime import date, datetime, timedelta
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from loguru import logger
 
@@ -85,12 +85,12 @@ class LiveEngine:
 
     def __init__(self, config: Config) -> None:
         self._config = config
-        self._strategy: Optional[Strategy] = None
+        self._strategy: Strategy | None = None
         self._symbols: list[str] = []
         self._stop_event = threading.Event()
         # 供外部（如 Web 层）读取实时状态
-        self._portfolio: Optional[PortfolioManager] = None
-        self._bus: Optional[EventBus] = None
+        self._portfolio: PortfolioManager | None = None
+        self._bus: EventBus | None = None
 
     def add_strategy(self, strategy: Strategy, symbols: list[str]) -> None:
         if not strategy.strategy_id:

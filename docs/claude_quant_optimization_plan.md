@@ -22,7 +22,7 @@
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
 | Phase 5 股票池体系升级 | 进行中 | 已新增 `cq/universe`、`StaticUniverseProvider`、`LiquidUniverseProvider` 和 `StoreBackedLiquidUniverseProvider`；`ALL_A_LIQUID` 已可从 `ParquetStore` 本地 bars 动态筛选；PIT 成分股待做 |
 | Phase 6 平台交叉验证 | 已完成初版 | 已新增 `cq/benchmark/cross_validation.py` 和 `docs/cross_validation_report.md`；可比较每日净值、持仓、成交并导出差异报告；真实外部平台样本对账待执行 |
-| Phase 7 模拟盘 / 实盘安全层 | 进行中 | 模拟盘已有会话持久化和历史查看；实盘安全层仍缺订单幂等、重启恢复、交易计划确认、日报/报警 |
+| Phase 7 模拟盘 / 实盘安全层 | 进行中 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫基础件，并接入 Paper/QMT 执行器幂等入口；重启恢复、日报/报警仍待做 |
 
 ## 下一步优化动作
 
@@ -932,6 +932,41 @@ trades_comparison.csv
 | 下单前二次确认 | P0 | 初期必须人工确认 |
 | 每日交易日报 | P1 | 复盘和审计 |
 | 异常报警 | P1 | 网络、行情、接口异常 |
+
+## 7.3 当前实现说明
+
+已新增 `cq/live/safety.py`：
+
+```text
+OrderIntent
+OrderIdempotencyStore
+TradePlan
+KillSwitch
+DailyLossGuard
+SafetyCheckResult
+```
+
+当前完成：
+
+```text
+订单意图可生成稳定 idempotency key
+幂等 key 可内存保存或 JSON 持久化
+TradePlan 支持 pending / approved / rejected 人工确认状态
+KillSwitch 可统一阻断新订单
+DailyLossGuard 可按单日亏损金额或比例阻断交易
+PaperExecutor 已接入订单幂等拦截
+QMTExecutor 已预留同一套订单幂等入口
+```
+
+后续仍需：
+
+```text
+将 KillSwitch / DailyLossGuard 接入 LiveEngine 主循环
+将 TradePlan 接入 Web 实盘启动和下单前确认流程
+完善重启恢复：启动时恢复幂等 key、未完成交易计划、会话状态
+生成每日交易日报
+补异常报警通道
+```
 
 ---
 

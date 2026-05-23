@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import queue
 from datetime import date, datetime
-from typing import Optional
 
 from loguru import logger
 
@@ -25,13 +24,13 @@ from cq.core.event_bus import EventBus
 from cq.core.events import FillEvent, RejectEvent, SignalEvent
 from cq.core.models import (
     OrderSide,
-    OrderType,
     Signal,
     Trade,
     new_order_id,
     new_trade_id,
 )
 from cq.engine.portfolio import PortfolioManager
+from cq.live.safety import OrderIdempotencyStore, OrderIntent
 from cq.risk.pre_trade import PreTradeRisk
 from cq.utils.trading_rules import AStockRules
 
@@ -55,10 +54,14 @@ class PaperExecutor:
         bus: EventBus,
         portfolio: PortfolioManager,
         risk: PreTradeRisk,
+        idempotency_store: OrderIdempotencyStore | None = None,
+        idempotency_namespace: str = "paper",
     ) -> None:
         self._bus = bus
         self._portfolio = portfolio
         self._risk = risk
+        self._idempotency_store = idempotency_store
+        self._idempotency_namespace = idempotency_namespace
         self._current_date: date = date.today()
 
         # 与 QMTExecutor 相同的接口：LiveEngine 从此队列读取事件
@@ -83,6 +86,19 @@ class PaperExecutor:
     def on_signal(self, event: SignalEvent) -> None:
         """处理 SignalEvent：风控 → 计算股数 → 模拟成交 → event_queue。"""
         signal = event.signal
+        intent = OrderIntent.from_signal(
+            signal,
+            quantity=signal.quantity or 0,
+            trade_date=self._current_date,
+            namespace=self._idempotency_namespace,
+        )
+        if self._idempotency_store is not None and self._idempotency_store.seen(intent.key):
+            self.event_queue.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"[PaperExecutor] 重复订单 {signal.symbol}: {intent.key}")
+            return
 
         # 风控
         passed, reason, clamped = self._risk.check(signal)
@@ -116,6 +132,14 @@ class PaperExecutor:
         else:
             fill_price = round(fill_price * (1 - self.SLIPPAGE), 2)
 
+        if self._idempotency_store is not None and not self._idempotency_store.register(intent.key):
+            self.event_queue.put(RejectEvent(
+                order_id=signal.signal_id,
+                reason=f"重复订单已拦截: {intent.key}",
+            ))
+            logger.warning(f"[PaperExecutor] 重复订单 {signal.symbol}: {intent.key}")
+            return
+
         our_order_id = new_order_id()
         amount = fill_price * quantity
         commission = max(amount * 0.0003, 5.0)   # 万3，最低5元
@@ -143,7 +167,7 @@ class PaperExecutor:
 
     # ── 私有方法 ─────────────────────────────────────────────────────────────────
 
-    def _get_fill_price(self, signal: Signal) -> Optional[float]:
+    def _get_fill_price(self, signal: Signal) -> float | None:
         """成交价优先级：限价 > 最新价。"""
         if signal.limit_price is not None:
             return signal.limit_price
