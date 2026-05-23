@@ -363,6 +363,8 @@ function renderDiagnosticsDetail(data) {
           <div class="flex justify-between gap-3"><span class="text-gray-600">胜率口径</span><span class="text-gray-300 text-right">${escapeHtml(metric.win_rate_basis || 'completed_round_trips_fifo')}</span></div>
           <div class="flex justify-between gap-3"><span class="text-gray-600">收益口径</span><span class="text-gray-300 text-right">${escapeHtml(metric.return_basis || 'equity_curve_eod')}</span></div>
           <div class="flex justify-between gap-3"><span class="text-gray-600">年化天数</span><span class="text-gray-300">${metric.annualization_trading_days || 252}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">年化换手</span><span class="text-gray-300">${Fmt.pct(metric.annual_turnover || 0, 1)}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">成本拖累</span><span class="text-gray-300">${Fmt.pct(metric.cost_drag || 0, 2)}</span></div>
           <div class="pt-1 text-yellow-300">${escapeHtml(metricWarnings)}</div>
         </div>
       </div>
@@ -381,6 +383,8 @@ function metricWarningText(value) {
     sample_days_too_few: '样本天数偏少',
     round_trips_too_few: '完整交易轮次偏少',
     benchmark_unavailable: '基准不可用',
+    annual_turnover_high: '年化换手偏高',
+    cost_drag_high: '成本拖累偏高',
     data_quality_failed: '数据质量失败',
     data_quality_warning: '数据质量警告',
     orders_rejected: '存在拒单',

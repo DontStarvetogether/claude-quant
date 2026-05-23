@@ -21,13 +21,39 @@ class AStockRules:
 
     # 涨跌停比例
     LIMIT_PCT_NORMAL = 0.10    # 普通股（主板）
-    LIMIT_PCT_ST = 0.05        # ST / *ST
-    LIMIT_PCT_WIDE = 0.20      # 科创板、创业板注册制、北交所
+    LIMIT_PCT_ST = 0.05        # 主板 ST / *ST
+    LIMIT_PCT_WIDE = 0.20      # 科创板、创业板
+    LIMIT_PCT_BSE = 0.30       # 北交所
 
     # 科创板前缀
     STAR_MARKET_PREFIX = "688"
+    # 创业板前缀
+    GEM_PREFIXES = ("300", "301")
     # 北交所前缀
-    BSE_PREFIX = "8"           # 北交所代码 8xxxxx.BJ
+    BSE_PREFIXES = ("4", "8", "9")
+
+    @classmethod
+    def get_limit_pct(
+        cls,
+        symbol: str,
+        is_st: bool = False,
+        trade_date: date | None = None,
+    ) -> float:
+        """
+        返回 A 股日涨跌停比例。
+
+        trade_date 预留给后续处理创业板注册制切换、新股前 5 日无涨跌幅等
+        日期相关规则；当前日频回测默认按现行常规限制处理。
+        """
+        code, exchange = cls._split_symbol(symbol)
+
+        if exchange == "BJ" or code.startswith(cls.BSE_PREFIXES):
+            return cls.LIMIT_PCT_BSE
+        if code.startswith(cls.STAR_MARKET_PREFIX) or code.startswith(cls.GEM_PREFIXES):
+            return cls.LIMIT_PCT_WIDE
+        if is_st:
+            return cls.LIMIT_PCT_ST
+        return cls.LIMIT_PCT_NORMAL
 
     @classmethod
     def calc_limit_prices(
@@ -41,15 +67,7 @@ class AStockRules:
 
         涨跌停价向下取整到分（0.01元精度）。
         """
-        code = symbol.split(".")[0]
-        exchange = symbol.split(".")[-1] if "." in symbol else ""
-
-        if is_st:
-            pct = cls.LIMIT_PCT_ST
-        elif code.startswith(cls.STAR_MARKET_PREFIX) or exchange == "BJ":
-            pct = cls.LIMIT_PCT_WIDE
-        else:
-            pct = cls.LIMIT_PCT_NORMAL
+        pct = cls.get_limit_pct(symbol, is_st=is_st)
 
         # 向下取整到分（使用 round 到2位小数，因精度问题用 int 处理）
         limit_up = round(int(pre_close * (1 + pct) * 100) / 100, 2)
@@ -86,3 +104,10 @@ class AStockRules:
     def is_valid_lot(quantity: int) -> bool:
         """是否是合法手数（100的整数倍，且大于0）。"""
         return quantity > 0 and quantity % 100 == 0
+
+    @staticmethod
+    def _split_symbol(symbol: str) -> tuple[str, str]:
+        parts = symbol.split(".")
+        code = parts[0]
+        exchange = parts[1].upper() if len(parts) > 1 else ""
+        return code, exchange

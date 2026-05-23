@@ -425,7 +425,7 @@ class DataPipeline:
             if pd.isna(pre_close) or pre_close <= 0:
                 # 无法计算：用当日收盘价 ±涨跌幅 作为近似
                 close = row.get("close", 0) or 0.0
-                pct = AStockRules.LIMIT_PCT_ST if is_st else AStockRules.LIMIT_PCT_NORMAL
+                pct = AStockRules.get_limit_pct(symbol, is_st=bool(is_st))
                 limit_ups.append(round(close * (1 + pct), 2) if close > 0 else 0.0)
                 limit_downs.append(round(close * (1 - pct), 2) if close > 0 else 0.0)
             else:

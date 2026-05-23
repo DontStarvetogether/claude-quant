@@ -469,6 +469,10 @@ class BacktestEngine:
             warnings.append("round_trips_too_few")
         if benchmark_status != "not_requested" and not alpha_beta_available:
             warnings.append("benchmark_unavailable")
+        if getattr(metrics, "annual_turnover", 0.0) > 12.0:
+            warnings.append("annual_turnover_high")
+        if getattr(metrics, "cost_drag", 0.0) > 0.03:
+            warnings.append("cost_drag_high")
         if data_quality and data_quality.get("status") in {"failed", "missing"}:
             warnings.append("data_quality_failed")
         elif data_quality and data_quality.get("status") == "warning":
@@ -487,6 +491,9 @@ class BacktestEngine:
             "win_rate_basis": "completed_round_trips_fifo",
             "return_basis": "equity_curve_eod",
             "annualization_trading_days": PerformanceMetrics.TRADING_DAYS,
+            "avg_daily_turnover": getattr(metrics, "avg_daily_turnover", 0.0),
+            "annual_turnover": getattr(metrics, "annual_turnover", 0.0),
+            "cost_drag": getattr(metrics, "cost_drag", 0.0),
             "warnings": warnings,
         }
 

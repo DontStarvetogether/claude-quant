@@ -118,6 +118,19 @@ class MetricsDict(BaseModel):
     round_trip_count: int = 0
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
+    avg_daily_turnover: float = 0.0
+    annual_turnover: float = 0.0
+    max_daily_turnover: float = 0.0
+    buy_turnover: float = 0.0
+    sell_turnover: float = 0.0
+    total_turnover: float = 0.0
+    gross_return: float = 0.0
+    net_return: float = 0.0
+    gross_annual_return: float = 0.0
+    net_annual_return: float = 0.0
+    total_slippage_cost: float = 0.0
+    cost_drag: float = 0.0
+    cost_to_nav: float = 0.0
     total_fees: float
     total_commission: float  # 总佣金
     total_stamp_tax: float  # 总印花税

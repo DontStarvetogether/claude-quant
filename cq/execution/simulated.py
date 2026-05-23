@@ -113,8 +113,8 @@ class SimulatedExecutor:
             if pos is None:
                 return 0
             if signal.percent is not None:
-                return AStockRules.round_to_lot(pos.tradeable_qty * signal.percent)
-            return pos.tradeable_qty  # 默认全卖（tradeable_qty 本身已是100整数倍）
+                return AStockRules.round_to_lot(pos.total_qty * signal.percent)
+            return pos.total_qty  # 信号日按总持仓生成 D+1 卖单，撮合日再检查 tradeable_qty
 
     def _get_price(self, signal: Signal) -> float | None:
         """获取用于计算股数的参考价格：限价 > 最新价。"""

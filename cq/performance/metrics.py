@@ -68,6 +68,19 @@ class MetricsResult:
     round_trip_count: int = 0
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
+    avg_daily_turnover: float = 0.0
+    annual_turnover: float = 0.0
+    max_daily_turnover: float = 0.0
+    buy_turnover: float = 0.0
+    sell_turnover: float = 0.0
+    total_turnover: float = 0.0
+    gross_return: float = 0.0
+    net_return: float = 0.0
+    gross_annual_return: float = 0.0
+    net_annual_return: float = 0.0
+    total_slippage_cost: float = 0.0
+    cost_drag: float = 0.0
+    cost_to_nav: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +96,19 @@ class MetricsResult:
             "round_trip_count": self.round_trip_count,
             "realized_pnl": self.realized_pnl,
             "unrealized_pnl": self.unrealized_pnl,
+            "avg_daily_turnover": self.avg_daily_turnover,
+            "annual_turnover": self.annual_turnover,
+            "max_daily_turnover": self.max_daily_turnover,
+            "buy_turnover": self.buy_turnover,
+            "sell_turnover": self.sell_turnover,
+            "total_turnover": self.total_turnover,
+            "gross_return": self.gross_return,
+            "net_return": self.net_return,
+            "gross_annual_return": self.gross_annual_return,
+            "net_annual_return": self.net_annual_return,
+            "total_slippage_cost": self.total_slippage_cost,
+            "cost_drag": self.cost_drag,
+            "cost_to_nav": self.cost_to_nav,
             "win_rate": self.win_rate,
             "avg_profit": self.avg_profit,
             "avg_loss": self.avg_loss,
@@ -196,6 +222,15 @@ class PerformanceMetrics:
 
         # 费用
         total_fees = sum(t.commission + t.stamp_tax for t in trades)
+        avg_assets = float(equity_curve.mean()) if len(equity_curve) else float(initial)
+        turnover_stats = self._turnover_stats(equity_curve, trades, avg_assets)
+        cost_drag = total_fees / initial if initial > 0 else 0.0
+        gross_return = total_return + cost_drag
+        gross_annual_return = (
+            (1 + gross_return) ** (self.TRADING_DAYS / n_days) - 1
+            if n_days > 0 and gross_return > -1
+            else 0.0
+        )
 
         return MetricsResult(
             total_return=round(total_return, 6),
@@ -210,6 +245,19 @@ class PerformanceMetrics:
             round_trip_count=trade_stats["total_trades"],
             realized_pnl=round(realized_pnl, 2),
             unrealized_pnl=round(unrealized_pnl, 2),
+            avg_daily_turnover=round(turnover_stats["avg_daily_turnover"], 6),
+            annual_turnover=round(turnover_stats["annual_turnover"], 6),
+            max_daily_turnover=round(turnover_stats["max_daily_turnover"], 6),
+            buy_turnover=round(turnover_stats["buy_turnover"], 6),
+            sell_turnover=round(turnover_stats["sell_turnover"], 6),
+            total_turnover=round(turnover_stats["total_turnover"], 6),
+            gross_return=round(gross_return, 6),
+            net_return=round(total_return, 6),
+            gross_annual_return=round(gross_annual_return, 6),
+            net_annual_return=round(annual_return, 6),
+            total_slippage_cost=0.0,
+            cost_drag=round(cost_drag, 6),
+            cost_to_nav=round(total_fees / avg_assets, 6) if avg_assets > 0 else 0.0,
             win_rate=round(trade_stats["win_rate"], 4),
             avg_profit=round(trade_stats["avg_profit"], 6),
             avg_loss=round(trade_stats["avg_loss"], 6),
@@ -221,6 +269,50 @@ class PerformanceMetrics:
             max_drawdown_start=dd_start if isinstance(dd_start, date) else dd_start.date() if hasattr(dd_start, 'date') else None,
             max_drawdown_end=dd_end if isinstance(dd_end, date) else dd_end.date() if hasattr(dd_end, 'date') else None,
         )
+
+    @classmethod
+    def _turnover_stats(
+        cls,
+        equity_curve: pd.Series,
+        trades: list[Trade],
+        avg_assets: float,
+    ) -> dict[str, float]:
+        """按日成交额 / 当日 EOD 净值计算换手率。"""
+        if equity_curve.empty:
+            return {
+                "avg_daily_turnover": 0.0,
+                "annual_turnover": 0.0,
+                "max_daily_turnover": 0.0,
+                "buy_turnover": 0.0,
+                "sell_turnover": 0.0,
+                "total_turnover": 0.0,
+            }
+
+        amount_by_date: dict[date, float] = defaultdict(float)
+        buy_amount = 0.0
+        sell_amount = 0.0
+        for trade in trades:
+            amount_by_date[trade.trade_date] += trade.amount
+            if trade.side == OrderSide.BUY:
+                buy_amount += trade.amount
+            else:
+                sell_amount += trade.amount
+
+        daily_turnovers: list[float] = []
+        for trade_date, equity in equity_curve.items():
+            equity_value = float(equity)
+            amount = amount_by_date.get(trade_date, 0.0)
+            daily_turnovers.append(amount / equity_value if equity_value > 0 else 0.0)
+
+        avg_daily = float(np.mean(daily_turnovers)) if daily_turnovers else 0.0
+        return {
+            "avg_daily_turnover": avg_daily,
+            "annual_turnover": avg_daily * cls.TRADING_DAYS,
+            "max_daily_turnover": max(daily_turnovers) if daily_turnovers else 0.0,
+            "buy_turnover": buy_amount / avg_assets if avg_assets > 0 else 0.0,
+            "sell_turnover": sell_amount / avg_assets if avg_assets > 0 else 0.0,
+            "total_turnover": sum(daily_turnovers),
+        }
 
     @staticmethod
     def _pair_trades(trades: list[Trade]) -> list[CompletedTrade]:
@@ -381,6 +473,12 @@ class PerformanceMetrics:
             sharpe_ratio=0.0, sortino_ratio=0.0, calmar_ratio=0.0,
             total_trades=0, fill_count=0, round_trip_count=0,
             realized_pnl=0.0, unrealized_pnl=0.0,
+            avg_daily_turnover=0.0, annual_turnover=0.0,
+            max_daily_turnover=0.0, buy_turnover=0.0, sell_turnover=0.0,
+            total_turnover=0.0,
+            gross_return=0.0, net_return=0.0,
+            gross_annual_return=0.0, net_annual_return=0.0,
+            total_slippage_cost=0.0, cost_drag=0.0, cost_to_nav=0.0,
             win_rate=0.0, avg_profit=0.0, avg_loss=0.0,
             profit_factor=0.0, avg_hold_days=0.0,
             total_fees=0.0, final_value=initial, initial_value=initial,

@@ -20,6 +20,22 @@ class TestLimitPrices:
         assert lp.limit_up == pytest.approx(120.0, abs=0.01)
         assert lp.limit_down == pytest.approx(80.0, abs=0.01)
 
+    def test_gem_stock_20pct(self):
+        assert AStockRules.get_limit_pct("300750.SZ") == pytest.approx(0.20)
+        lp = AStockRules.calc_limit_prices(pre_close=100.0, is_st=False, symbol="300750.SZ")
+        assert lp.limit_up == pytest.approx(120.0, abs=0.01)
+        assert lp.limit_down == pytest.approx(80.0, abs=0.01)
+
+    def test_bj_stock_30pct(self):
+        assert AStockRules.get_limit_pct("430047.BJ") == pytest.approx(0.30)
+        lp = AStockRules.calc_limit_prices(pre_close=10.0, is_st=False, symbol="430047.BJ")
+        assert lp.limit_up == pytest.approx(13.0, abs=0.01)
+        assert lp.limit_down == pytest.approx(7.0, abs=0.01)
+
+    def test_st_on_wide_limit_board_keeps_wide_limit(self):
+        assert AStockRules.get_limit_pct("300750.SZ", is_st=True) == pytest.approx(0.20)
+        assert AStockRules.get_limit_pct("688981.SH", is_st=True) == pytest.approx(0.20)
+
     def test_floor_to_cent(self):
         """涨跌停价应向下取整到分（0.01元精度）。"""
         lp = AStockRules.calc_limit_prices(pre_close=3.33, is_st=False, symbol="000001.SZ")

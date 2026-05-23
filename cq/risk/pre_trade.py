@@ -178,13 +178,15 @@ class PreTradeRisk:
         if pos is None:
             return False, f"无持仓: {signal.symbol}", None
 
-        sell_qty = self._calc_sell_qty(signal, pos.tradeable_qty)
+        # 信号日只检查总持仓是否足够生成 D+1 卖单；真实 T+1 可卖数量
+        # 在撮合日由 BarMatchingEngine 用 tradeable_qty 做最终检查。
+        sell_qty = self._calc_sell_qty(signal, pos.total_qty)
         if sell_qty <= 0:
             return False, "卖出数量为零", None
 
-        if pos.tradeable_qty < sell_qty:
+        if pos.total_qty < sell_qty:
             return False, (
-                f"T+1限制: 请求卖出 {sell_qty} 股，可卖 {pos.tradeable_qty} 股"
+                f"持仓不足: 请求卖出 {sell_qty} 股，总持仓 {pos.total_qty} 股"
             ), None
 
         return True, "", None

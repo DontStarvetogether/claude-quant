@@ -109,3 +109,26 @@ def test_compute_exposes_fill_and_round_trip_counts():
     assert result.round_trip_count == 2
     assert result.total_trades == 2
     assert result.realized_pnl == pytest.approx(294.0)
+
+
+def test_compute_exposes_turnover_and_cost_drag():
+    equity = pd.Series(
+        [100_000.0, 101_000.0, 102_000.0],
+        index=[date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)],
+    )
+    trades = [
+        make_trade(OrderSide.BUY, 1000, 10.0, date(2024, 1, 3), commission=5.0),
+        make_trade(OrderSide.SELL, 1000, 11.0, date(2024, 1, 4), commission=5.0, stamp_tax=5.5),
+    ]
+
+    result = PerformanceMetrics().compute(equity, trades)
+
+    expected_daily = (0.0 + 10_000 / 101_000 + 11_000 / 102_000) / 3
+    assert result.avg_daily_turnover == pytest.approx(expected_daily, abs=1e-6)
+    assert result.annual_turnover == pytest.approx(expected_daily * 252, abs=1e-6)
+    assert result.max_daily_turnover == pytest.approx(11_000 / 102_000, abs=1e-6)
+    assert result.buy_turnover == pytest.approx(10_000 / 101_000, rel=1e-3)
+    assert result.sell_turnover == pytest.approx(11_000 / 101_000, rel=1e-3)
+    assert result.total_fees == pytest.approx(15.5)
+    assert result.cost_drag == pytest.approx(15.5 / 100_000, abs=1e-6)
+    assert result.gross_return > result.net_return

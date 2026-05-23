@@ -173,8 +173,8 @@ class TestT1Constraint:
         assert len(buy_fills) == 1
         assert len(sell_fills) == 0  # 卖出应被拒绝
 
-    def test_after_trading_before_eod_unlock(self):
-        """盘后信号发生在 T+1 解锁前，当日买入不能在 after_trading 中立刻变成可卖。"""
+    def test_after_trading_sell_signal_fills_next_open_after_t1_unlock(self):
+        """D+1 买入后，当日盘后允许生成卖单，D+2 开盘完成最终 T+1 检查并成交。"""
 
         class BuyThenAfterTradingSellSameDay(Strategy):
             strategy_id = "test_after_trading_t1"
@@ -199,8 +199,9 @@ class TestT1Constraint:
         sell_fills = [f for f in fills if f.side == OrderSide.SELL]
 
         assert len(buy_fills) == 1
-        assert len(sell_fills) == 0
-        assert any(("T+1限制" in reason or "卖出数量为零" in reason) for _, reason in rejects)
+        assert len(sell_fills) == 1
+        assert sell_fills[0].trade_date == date(2024, 1, 4)
+        assert not any(("T+1限制" in reason or "卖出数量为零" in reason) for _, reason in rejects)
 
 
 class TestCashConstraint:
