@@ -17,7 +17,7 @@
 | Phase 2.2 成本前后收益 | 已完成初版 | 已输出 `gross_return/net_return/gross_annual_return/net_annual_return/cost_drag/cost_to_nav` 等 |
 | Phase 2.3 组合暴露指标 | 已完成初版 | 已输出平均持仓数、现金占比、最大单票、Top5 集中度；行业/市值暴露未做 |
 | Web 回测/模拟盘展示对齐 | 已完成一轮 | 回测、模拟盘、策略对比页颜色语义统一；模拟盘成交记录补持有现金、公司名称、唯一 session URL、图上买卖标记 |
-| Phase 3 因子研究模块 | 未开始 | 下一阶段核心工作 |
+| Phase 3 因子研究模块 | 进行中 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手；Markdown 因子报告未做 |
 | Phase 4 标准 Benchmark 策略 | 未开始 | 现有示例策略不能替代可回归验证的 benchmark 套件 |
 | Phase 5 股票池体系升级 | 进行中 | 已有静态预设 `web/universe_registry.py`；未形成 `UniverseProvider`，无 PIT 成分股/ALL_A_LIQUID |
 | Phase 6 平台交叉验证 | 未开始 | 需要先建立 benchmark 与导出格式 |
@@ -27,11 +27,10 @@
 
 当前建议不要继续堆 UI 细节，优先进入“研究能力 + 可回归验证”：
 
-1. **Phase 3 开工：新增 `cq/research` 单因子研究骨架**
-   - `forward_return.py`：按 symbol 计算 1/5/20 日未来收益
-   - `ic.py`：Rank IC / ICIR / IC 胜率
-   - `grouping.py`：分层收益、Top-Bottom、覆盖率
-   - 配套 unit tests，先不做 Web 页面
+1. **Phase 3 收尾：新增 Markdown 因子报告**
+   - 汇总覆盖率、IC Mean、ICIR、IC 胜率
+   - 汇总 Top/Bottom/Top-Bottom 收益和单调性
+   - 第一版只做 Markdown 字符串生成和单元测试，不做 Web 页面
 
 2. **Phase 4 开工：建立第一个可回归 Benchmark**
    - 先做 `20日动量 Top20`，输出每日净值、持仓、成交
