@@ -22,7 +22,7 @@
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
 | Phase 5 股票池体系升级 | 已完成初版 | 已新增 `cq/universe`、静态股票池、`ALL_A_LIQUID` 动态流动性池和 `PointInTimeUniverseProvider`；PIT 可从 CSV/DataFrame 按日期解析，真实指数历史成分股数据接入待做 |
 | Phase 6 平台交叉验证 | 已完成增强版初版 | 已新增 `cq/benchmark/cross_validation.py`、`scripts/run_cross_validation.py` 和 `docs/cross_validation_report.md`；可从本地/外部平台 CSV 直接加载、标准化常见字段别名、比较每日净值/持仓/成交并导出差异报告；真实外部平台样本对账待执行 |
-| Phase 7 模拟盘 / 实盘安全层 | 已完成增强版初版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报和异常报警通道；安全层和恢复状态已接入 `LiveEngine` / `paper_trade` / Web 会话启动链路；真实通知渠道和 Web 配置入口仍待做 |
+| Phase 7 模拟盘 / 实盘安全层 | 已完成增强版初版 | 模拟盘已有会话持久化和历史查看；已新增订单幂等、交易计划确认、风控总开关、单日亏损守卫、重启恢复状态、每日交易日报和异常报警通道；安全层、恢复状态、会话结束日报已接入 `LiveEngine` / `paper_trade` / Web 会话链路；真实通知渠道和 Web 配置入口仍待做 |
 
 ## 下一步优化动作
 
@@ -1008,6 +1008,7 @@ LiveEngine.run() 会把 idempotency store 传入 QMTExecutor
 LiveEngine.paper_trade() 会把 idempotency store 传入 SimulatedExecutor
 LiveEngine.configure_recovery() 已接入 LiveRecoveryStore，支持启动时恢复幂等 key，运行/结束/异常时保存 running/stopped/failed 状态
 Web 启动模拟盘/实盘时会为每个 session 自动配置 `live_state/idempotency/{session_id}.json` 和 `live_state/recovery/{session_id}.json`
+Web 模拟盘/实盘会话正常结束后会自动导出 `live_state/reports/{session_id}/daily_report.md`、`daily_summary.json`、`trades.csv`、`positions.csv`
 每日交易日报可从成交、权益曲线、持仓、风险提示生成 Markdown/JSON/CSV
 异常报警可发送到内存 sink 或 JSONL 文件，后续可扩展邮件/企业微信/飞书
 重启恢复状态可保存/加载 session 状态、幂等 key、待审批交易计划 id
@@ -1018,7 +1019,7 @@ Web 启动模拟盘/实盘时会为每个 session 自动配置 `live_state/idemp
 ```text
 将 TradePlan 接入 Web 实盘启动和下单前确认流程
 将 LiveRecoveryStore 接入 Web 恢复入口和历史状态展示
-将每日交易日报接入 Web / 定时任务
+将每日交易日报接入 Web 历史报告下载入口 / 定时任务
 将异常报警接入具体通知渠道和 LiveEngine 异常路径
 ```
 

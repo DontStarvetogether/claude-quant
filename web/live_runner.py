@@ -21,7 +21,12 @@ from loguru import logger
 from cq.core.events import BarEvent, EndOfDayEvent, FillEvent
 from cq.core.models import OrderSide, Trade
 from cq.data.store.parquet_store import ParquetStore
-from cq.live import LiveRecoveryStore, OrderIdempotencyStore
+from cq.live import (
+    LiveRecoveryStore,
+    OrderIdempotencyStore,
+    export_daily_trading_report,
+    generate_daily_trading_report,
+)
 from cq.live.engine import LiveEngine
 from cq.performance.metrics import PerformanceMetrics
 from cq.strategy.registry import load_strategy
@@ -207,6 +212,28 @@ def _configure_engine_state(
     )
 
 
+def _export_session_daily_report(
+    config: Config,
+    session: LiveSession,
+    alerts: list[str] | None = None,
+) -> None:
+    """Export a daily report for a finished Web live/paper session."""
+    try:
+        trade_date = session.current_date or date.today().isoformat()
+        report = generate_daily_trading_report(
+            session_id=session.session_id,
+            trade_date=trade_date,
+            trades=db.get_trades(session.session_id),
+            equity_curve=db.get_equity_curve(session.session_id),
+            positions=session.positions,
+            alerts=alerts,
+        )
+        output_dir = config.data.root_path / "live_state" / "reports" / session.session_id
+        export_daily_trading_report(report, output_dir)
+    except Exception as exc:
+        logger.warning(f"导出每日交易日报失败 session={session.session_id}: {exc}")
+
+
 def _run_paper(
     session: LiveSession,
     start_date: str,
@@ -272,6 +299,7 @@ def _run_paper(
             positions_json=_serialize_positions(session),
             metrics_json=metrics_json,
         )
+        _export_session_daily_report(config, session)
         logger.info(f"模拟盘结束 session={session.session_id}")
 
     except Exception as e:
@@ -350,6 +378,7 @@ def _run_live(
             positions_json=_serialize_positions(session),
             metrics_json=metrics_json,
         )
+        _export_session_daily_report(config, session)
         logger.info(f"实盘结束 session={session.session_id}")
 
     except Exception as e:
