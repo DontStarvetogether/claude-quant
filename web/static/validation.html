@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>交叉验证 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/research.html" class="text-gray-400 hover:text-gray-100 transition-colors">因子研究</a>
+      <a href="/benchmark.html" class="text-gray-400 hover:text-gray-100 transition-colors">Benchmark</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+      <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100 mb-1">交叉验证</h1>
+      <p class="text-sm text-gray-500">对比 JoinQuant、RiceQuant、QMT 或其他平台导出的净值、持仓、成交和费用</p>
+    </div>
+
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">外部结果</h2>
+        <button id="template-btn" type="button" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-300 transition-colors">生成模板</button>
+      </div>
+      <form id="validation-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">本地 equity_curve.csv</label>
+          <input id="local-equity-csv" type="text" placeholder="output/benchmark/equity_curve.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">本地 trades.csv</label>
+          <input id="local-trades-csv" type="text" placeholder="output/benchmark/trades.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">equity_curve.csv</label>
+          <input id="equity-csv" type="text" placeholder="output/external/equity_curve.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">trades.csv</label>
+          <input id="trades-csv" type="text" placeholder="output/external/trades.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">holdings.csv</label>
+          <input id="holdings-csv" type="text" placeholder="output/external/holdings.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">输出目录</label>
+          <input id="output-dir" type="text" placeholder="output/cross_validation/reports"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">平台</label>
+          <select id="platform" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="joinquant">JoinQuant</option>
+            <option value="ricequant">RiceQuant</option>
+            <option value="qmt">QMT</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="md:col-span-2 flex justify-end">
+          <button id="submit-btn" type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm text-white transition-colors">运行对账</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-4">差异报告</h2>
+      <div id="validation-output" class="text-sm text-gray-500">Cross validation API 接入后显示净值、持仓、成交和费用差异。</div>
+    </section>
+  </main>
+
+  <script src="/static/js/validation.js"></script>
+</body>
+</html>

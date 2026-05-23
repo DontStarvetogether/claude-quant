@@ -125,6 +125,8 @@ function renderPage(data) {
   renderDataDiagnostics(data.data_diagnostics);
   renderUniverseDiagnostics(data.universe_diagnostics);
   renderDiagnosticsDetail(data);
+  renderExecutionDiagnosticsPanel(data);
+  renderCostAttributionPanel(data);
   renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark_name || data.benchmark);
   renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics, data);
@@ -587,6 +589,83 @@ function renderDetailMetrics(m, data = {}) {
       <span class="metric-row-value ${cls}">${value}</span>
     </div>
   `).join('');
+}
+
+function renderExecutionDiagnosticsPanel(data) {
+  const body = document.getElementById('execution-diagnostics-body');
+  const summary = document.getElementById('execution-diagnostics-summary');
+  if (!body || !summary) return;
+  const exec = data.execution_diagnostics || {};
+  const rejected = exec.rejected_count ?? data.rejected_count ?? 0;
+  const orders = exec.order_count ?? ((exec.filled_count || 0) + rejected);
+  summary.textContent = `${orders} 单 · 拒单 ${rejected}`;
+  const items = [
+    ['涨停买不进', exec.rejected_by_limit_up || 0],
+    ['跌停卖不出', exec.rejected_by_limit_down || 0],
+    ['停牌不可交易', exec.rejected_by_suspended || 0],
+    ['T+1 受限', exec.rejected_by_t1 || 0],
+    ['现金不足', exec.rejected_by_cash || 0],
+    ['持仓不足', exec.rejected_by_position || 0],
+    ['容量限制', (exec.capacity_rejected_count || 0) + (exec.capacity_limited_count || 0)],
+    ['缺行情', exec.rejected_by_missing_bar || 0],
+  ];
+  const maxValue = Math.max(1, ...items.map(([, count]) => Number(count) || 0));
+  body.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+      <div class="space-y-3">
+        ${items.map(([label, count]) => `
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-400">${label}</span>
+              <span class="text-gray-500">${count} 笔</span>
+            </div>
+            <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div class="h-full ${Number(count) > 0 ? 'bg-yellow-500' : 'bg-gray-700'} rounded-full" style="width:${Math.round((Number(count) || 0) / maxValue * 100)}%"></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="rounded-lg border border-gray-800 bg-gray-950/40 p-4 text-xs space-y-2">
+        <div class="flex justify-between gap-3"><span class="text-gray-600">订单总数</span><span class="text-gray-300">${orders}</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-600">成交率</span><span class="text-gray-300">${Fmt.pct(exec.filled_order_rate ?? 1, 1)}</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-600">平均成交比例</span><span class="text-gray-300">${Fmt.pct(exec.avg_fill_ratio ?? 1, 1)}</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-600">部分成交</span><span class="text-gray-300">${exec.partial_fill_count || 0}</span></div>
+        <div class="pt-2 text-gray-500">${escapeHtml(formatRejectSummary(exec) || '无主要拒单')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCostAttributionPanel(data) {
+  const body = document.getElementById('cost-attribution-body');
+  const summary = document.getElementById('cost-attribution-summary');
+  if (!body || !summary) return;
+  const m = data.metrics || {};
+  const grossReturn = m.gross_return ?? m.total_return ?? 0;
+  const netReturn = m.net_return ?? m.total_return ?? 0;
+  const costDrag = m.cost_drag || 0;
+  const slippageCost = m.total_slippage_cost || 0;
+  summary.textContent = `成本拖累 ${Fmt.pct(costDrag, 2)} · 年化换手 ${Fmt.pct(m.annual_turnover || 0, 1)}`;
+  const rows = [
+    ['成本前收益', Fmt.pct(grossReturn), Fmt.colorClass(grossReturn)],
+    ['成本后收益', Fmt.pct(netReturn), Fmt.colorClass(netReturn)],
+    ['总成本拖累', Fmt.pct(costDrag, 2), costDrag > 0.03 ? 'text-yellow-400' : 'text-gray-300'],
+    ['佣金', Fmt.money(m.total_commission || 0), 'text-gray-300'],
+    ['印花税', Fmt.money(m.total_stamp_tax || 0), 'text-gray-300'],
+    ['滑点成本', Fmt.money(slippageCost), slippageCost > 0 ? 'text-yellow-400' : 'text-gray-300'],
+    ['买入换手', Fmt.pct(m.buy_turnover || 0, 2), 'text-gray-300'],
+    ['卖出换手', Fmt.pct(m.sell_turnover || 0, 2), 'text-gray-300'],
+  ];
+  body.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      ${rows.map(([label, value, cls]) => `
+        <div class="rounded-lg border border-gray-800 bg-gray-950/40 px-4 py-3">
+          <div class="text-xs text-gray-600 mb-1">${label}</div>
+          <div class="text-lg font-semibold ${cls}">${value}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 // ── 成交记录 ──────────────────────────────────────────────────────────────────

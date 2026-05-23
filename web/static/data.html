@@ -15,6 +15,8 @@
     <nav class="flex gap-4 text-sm">
       <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
       <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/research.html" class="text-gray-400 hover:text-gray-100 transition-colors">因子研究</a>
+      <a href="/benchmark.html" class="text-gray-400 hover:text-gray-100 transition-colors">Benchmark</a>
       <a href="/data.html" class="text-gray-100 font-medium">数据管理</a>
       <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
       <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
@@ -46,6 +48,18 @@
         <p class="metric-label">最新数据日期</p>
         <p id="stat-latest" class="metric-value text-sm">—</p>
       </div>
+    </section>
+
+    <!-- 数据质量中心 -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">数据质量中心</h2>
+        <button id="quality-refresh-btn" type="button" class="text-xs text-blue-400 hover:text-blue-300">刷新</button>
+      </div>
+      <div id="quality-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div class="text-gray-600">加载中...</div>
+      </div>
+      <div id="quality-notes" class="mt-4 text-xs text-gray-500"></div>
     </section>
 
     <!-- 下载/更新数据 -->
@@ -377,6 +391,12 @@
       return res.json();
     }
 
+    async function fetchQuality() {
+      const res = await fetch('/api/data/quality/summary');
+      if (!res.ok) throw new Error('获取数据质量失败');
+      return res.json();
+    }
+
     async function fetchSymbols(page, q) {
       const params = new URLSearchParams({ page, page_size: PAGE_SIZE, q });
       const res = await fetch(`/api/data/symbols?${params}`);
@@ -407,6 +427,34 @@
         document.getElementById('stat-latest').textContent = s.latest_date || '—';
       } catch (e) {
         console.error('加载统计失败', e);
+      }
+    }
+
+    async function loadQuality() {
+      const grid = document.getElementById('quality-grid');
+      const notes = document.getElementById('quality-notes');
+      try {
+        const q = await fetchQuality();
+        const market = q.market_data || {};
+        const pit = q.pit || {};
+        const checks = q.checks || {};
+        grid.innerHTML = [
+          ['行情覆盖', `${market.symbols_with_qfq || 0} / ${market.inspected_symbols || 0}`, checks.price_coverage],
+          ['过期样本', market.stale_symbols || 0, 'stale_symbols'],
+          ['PIT 股票池', pit.status || 'unknown', `${pit.universe_count || 0} 个 universe`],
+          ['重复日期样本', (market.duplicate_date_samples || []).length, 'duplicate_date_samples'],
+        ].map(([label, value, hint]) => `
+          <div class="metric-card">
+            <p class="metric-label">${label}</p>
+            <p class="metric-value text-base">${value}</p>
+            <p class="text-xs text-gray-500 mt-1">${hint || '—'}</p>
+          </div>
+        `).join('');
+        const pitNote = pit.notes?.length ? pit.notes.join('；') : `PIT 文件：${pit.path || '—'}`;
+        notes.textContent = `${pitNote} · 生成时间 ${q.generated_at || '—'}`;
+      } catch (e) {
+        grid.innerHTML = `<div class="text-red-400">${e.message}</div>`;
+        notes.textContent = '';
       }
     }
 
@@ -637,9 +685,12 @@
       if ((currentPage + 1) * PAGE_SIZE < totalItems) { currentPage++; loadTable(); }
     });
 
+    document.getElementById('quality-refresh-btn')?.addEventListener('click', loadQuality);
+
     // ── 初始化 ────────────────────────────────────────────────────────────────
 
     loadStats();
+    loadQuality();
     loadTable();
     // 常用股票
     let dlQuickExpanded = false;

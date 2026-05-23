@@ -1,4 +1,7 @@
 """FastAPI 应用入口"""
+
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -7,9 +10,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from web.routers import backtest, data, live, strategy, symbols, universe
-from web.data_update_service import DataUpdateService
 from cq.utils.config import Config
+from web.data_update_service import DataUpdateService
+from web.routers import (
+    backtest,
+    benchmark,
+    data,
+    live,
+    research,
+    runtime,
+    strategy,
+    symbols,
+    universe,
+    validation,
+)
 
 app = FastAPI(
     title="Claude Quant",
@@ -31,6 +45,10 @@ app.include_router(backtest.router)
 app.include_router(symbols.router)
 app.include_router(data.router)
 app.include_router(live.router)
+app.include_router(research.router)
+app.include_router(benchmark.router)
+app.include_router(validation.router)
+app.include_router(runtime.router)
 
 # 静态文件（前端）
 STATIC_DIR = Path(__file__).parent / "static"
@@ -39,7 +57,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 # 数据更新服务实例
-_update_service: DataUpdateService = None
+_update_service: DataUpdateService | None = None
 
 
 @app.on_event("startup")
@@ -53,11 +71,11 @@ async def startup_event():
         config = Config.from_yaml("config/default.yaml")
         _update_service = DataUpdateService(config)
         _update_service.start()
-        
+
         # 将更新服务实例传递给 symbols router
         import web.routers.symbols as symbols_router
         symbols_router._update_service = _update_service
-        
+
     except Exception as e:
         from loguru import logger
         logger.error(f"启动数据更新服务失败: {e}")
@@ -76,6 +94,11 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html", headers=_NO_CACHE_HEADERS)
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.get("/result.html", include_in_schema=False)
 async def result_page():
     return FileResponse(STATIC_DIR / "result.html", headers=_NO_CACHE_HEADERS)
@@ -84,6 +107,26 @@ async def result_page():
 @app.get("/strategies.html", include_in_schema=False)
 async def strategies_page():
     return FileResponse(STATIC_DIR / "strategies.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/research.html", include_in_schema=False)
+async def research_page():
+    return FileResponse(STATIC_DIR / "research.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/research_result.html", include_in_schema=False)
+async def research_result_page():
+    return FileResponse(STATIC_DIR / "research_result.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/benchmark.html", include_in_schema=False)
+async def benchmark_page():
+    return FileResponse(STATIC_DIR / "benchmark.html", headers=_NO_CACHE_HEADERS)
+
+
+@app.get("/validation.html", include_in_schema=False)
+async def validation_page():
+    return FileResponse(STATIC_DIR / "validation.html", headers=_NO_CACHE_HEADERS)
 
 
 @app.get("/data.html", include_in_schema=False)

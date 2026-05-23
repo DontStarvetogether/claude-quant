@@ -6,7 +6,8 @@ import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
@@ -19,6 +20,7 @@ from cq.data.calendar import TradingCalendar
 from cq.data.pipeline import DataPipeline
 from cq.data.source import create_source
 from cq.data.store.parquet_store import ParquetStore
+from cq.universe import pit_membership_diagnostics
 from cq.utils.config import Config
 from web.routers.symbols import _load_name_cache, _local_symbols, _name_cache
 
@@ -137,6 +139,65 @@ def _calc_disk_usage_mb(store: ParquetStore) -> float:
     return round(total_bytes / (1024 * 1024), 2)
 
 
+def _is_stale(last_date: str | None, *, stale_days: int = 7) -> bool:
+    if not last_date:
+        return False
+    try:
+        value = date.fromisoformat(last_date)
+    except ValueError:
+        return True
+    return (date.today() - value).days > stale_days
+
+
+def _sample_duplicate_dates(store: ParquetStore, symbols: list[str]) -> list[dict[str, object]]:
+    samples: list[dict[str, object]] = []
+    bars_root = store._root / "bars"
+    for symbol in symbols:
+        try:
+            code, exchange = symbol.split(".")
+        except ValueError:
+            continue
+        path = bars_root / exchange / code / "qfq.parquet"
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["trade_date"])
+        except Exception:
+            continue
+        duplicates = int(df["trade_date"].duplicated().sum()) if "trade_date" in df else 0
+        if duplicates:
+            samples.append({"symbol": symbol, "duplicate_dates": duplicates})
+    return samples[:20]
+
+
+def _pit_quality_summary(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {
+            "status": "missing",
+            "path": str(path),
+            "universe_count": 0,
+            "symbol_count": 0,
+            "notes": ["未找到 PIT 成分股文件，研究和 benchmark 会退化为静态或 CSV 范围。"],
+        }
+    try:
+        diagnostics = pit_membership_diagnostics(pd.read_csv(path))
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "path": str(path),
+            "error": str(exc),
+            "universe_count": 0,
+            "symbol_count": 0,
+        }
+    return {
+        "status": "available",
+        "path": str(path),
+        "universe_count": diagnostics["universe_count"],
+        "symbol_count": diagnostics["symbol_count"],
+        "universes": diagnostics["universes"],
+    }
+
+
 # ── 接口 1：GET /api/data/stats ───────────────────────────────────────────────
 
 
@@ -197,6 +258,49 @@ async def get_stats() -> dict:
         "total_records": total_records,
         "disk_usage_mb": disk_usage_mb,
         "latest_date": latest_date,
+    }
+
+
+@router.get("/quality/summary")
+async def get_quality_summary(limit: int = Query(default=200, ge=1, le=5000)) -> dict:
+    """Return a compact local data quality center summary."""
+
+    store = _get_store()
+    if not _name_cache:
+        _load_name_cache(store)
+
+    symbols = _local_symbols(store)
+    inspected = symbols[:limit]
+    infos = [_get_symbol_info(store, symbol) for symbol in inspected]
+    with_data = sum(1 for item in infos if item.records > 0)
+    stale = sum(1 for item in infos if _is_stale(item.last_date))
+    empty = sum(1 for item in infos if item.records == 0)
+    duplicate_samples = _sample_duplicate_dates(store, inspected[:50])
+    pit_summary = _pit_quality_summary(Path("data/universes/pit_memberships.csv"))
+
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "sample_limit": limit,
+        "market_data": {
+            "total_local_symbols": len(symbols),
+            "inspected_symbols": len(inspected),
+            "symbols_with_qfq": with_data,
+            "empty_symbols": empty,
+            "stale_symbols": stale,
+            "duplicate_date_samples": duplicate_samples,
+        },
+        "adjustment": {
+            "qfq_available_symbols": with_data,
+            "status": "available" if with_data else "unavailable",
+        },
+        "pit": pit_summary,
+        "checks": {
+            "price_coverage": "available" if with_data else "unavailable",
+            "pit_coverage": pit_summary["status"],
+            "st_flag": "best_effort_from_download_diagnostics",
+            "limit_price": "exchange_or_calculated_when_present",
+            "suspension": "volume_zero_or_feed_flag_when_present",
+        },
     }
 
 

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>因子研究 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/research.html" class="text-gray-100 font-medium">因子研究</a>
+      <a href="/benchmark.html" class="text-gray-400 hover:text-gray-100 transition-colors">Benchmark</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+      <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
+    </nav>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-8">
+    <section class="space-y-6">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-100 mb-1">因子研究</h1>
+        <p class="text-sm text-gray-500">分层收益、IC、覆盖率、换手率和样本切分诊断</p>
+      </div>
+
+      <form id="research-form" class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">因子</label>
+          <select id="factor-id" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="">加载中...</option>
+          </select>
+          <p id="factor-desc" class="text-xs text-gray-500 mt-1">—</p>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">股票池</label>
+          <select id="universe-id" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="">加载中...</option>
+          </select>
+          <p id="universe-desc" class="text-xs text-gray-500 mt-1">—</p>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">价格数据 CSV</label>
+          <input id="price-csv" type="text" placeholder="data/research/prices.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">PIT 股票池 CSV</label>
+          <input id="pit-csv" type="text" placeholder="data/universes/pit_memberships.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">开始日期</label>
+            <input id="start-date" type="date" value="2020-01-01"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">结束日期</label>
+            <input id="end-date" type="date" value="2024-12-31"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Forward 周期</label>
+            <input id="forward-periods" type="text" value="1,5,20"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">分组数量</label>
+            <input id="groups" type="number" min="2" max="20" value="5"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">IC 方法</label>
+            <select id="ic-method" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+              <option value="spearman">Spearman</option>
+              <option value="pearson">Pearson</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">调仓频率</label>
+            <select id="rebalance" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+              <option value="weekly">weekly</option>
+              <option value="daily">daily</option>
+              <option value="monthly">monthly</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">样本切分日期</label>
+          <input id="sample-split-date" type="date"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex items-center gap-2 text-sm text-gray-300">
+            <input id="winsorize" type="checkbox" checked class="accent-blue-500" />
+            winsorize
+          </label>
+          <label class="flex items-center gap-2 text-sm text-gray-300">
+            <input id="zscore" type="checkbox" checked class="accent-blue-500" />
+            zscore
+          </label>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">中性化</label>
+          <select id="neutralize" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="none">none</option>
+            <option value="industry">industry</option>
+            <option value="size">size</option>
+            <option value="industry_size">industry_size</option>
+          </select>
+        </div>
+
+        <button id="submit-btn" type="submit"
+          class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium py-2.5 rounded-lg transition-colors">
+          运行因子研究
+        </button>
+      </form>
+    </section>
+
+    <section class="space-y-6">
+      <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-gray-300">运行进度</h2>
+          <span id="status-pill" class="text-xs text-gray-500">idle</span>
+        </div>
+        <div class="h-2 bg-gray-800 rounded-full overflow-hidden mb-4">
+          <div id="progress-bar" class="h-full bg-blue-500 rounded-full transition-all" style="width: 0%;"></div>
+        </div>
+        <div id="progress-log" class="text-sm text-gray-500 space-y-2">
+          <div>等待提交任务</div>
+        </div>
+      </section>
+
+      <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between gap-4 mb-4">
+          <h2 class="text-sm font-semibold text-gray-300">历史研究</h2>
+          <button id="refresh-history-btn" type="button" class="text-xs text-blue-400 hover:text-blue-300">刷新</button>
+        </div>
+        <div id="history-list" class="space-y-3 text-sm text-gray-500">加载中...</div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/research.js"></script>
+</body>
+</html>

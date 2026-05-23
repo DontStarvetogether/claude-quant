@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>因子研究结果 — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/research.html" class="text-gray-100 font-medium">因子研究</a>
+      <a href="/benchmark.html" class="text-gray-400 hover:text-gray-100 transition-colors">Benchmark</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+      <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
+    </nav>
+    <div id="header-info" class="text-sm text-gray-500">—</div>
+  </header>
+
+  <div id="loading" class="flex items-center justify-center h-64">
+    <div class="text-gray-500 text-sm">加载中...</div>
+  </div>
+
+  <main id="main-content" class="hidden max-w-7xl mx-auto px-4 py-8 space-y-8">
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="metric-card">
+        <p class="metric-label">平均覆盖率</p>
+        <p id="m-coverage" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">Rank IC 均值</p>
+        <p id="m-ic-mean" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">Rank ICIR</p>
+        <p id="m-icir" class="metric-value">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">Top-Bottom</p>
+        <p id="m-top-bottom" class="metric-value">—</p>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">IC 时间序列</h2>
+        <div id="ic-chart" style="height: 300px;"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">分组净值</h2>
+        <div id="group-nav-chart" style="height: 300px;"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">Top-Bottom</h2>
+        <div id="top-bottom-chart" style="height: 300px;"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">覆盖率 / 换手率</h2>
+        <div id="quality-chart" style="height: 300px;"></div>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">IC 摘要</h2>
+        <div id="ic-summary-table" class="overflow-x-auto text-sm"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-gray-300 mb-4">单调性</h2>
+        <div id="monotonicity-table" class="overflow-x-auto text-sm"></div>
+      </div>
+    </section>
+
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">诊断与导出</h2>
+        <button id="benchmark-btn" type="button" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs text-white transition-colors">
+          生成 Benchmark
+        </button>
+      </div>
+      <div id="diagnostics" class="text-sm text-gray-500 space-y-2"></div>
+      <div id="artifact-list" class="mt-5 flex gap-2 flex-wrap"></div>
+    </section>
+  </main>
+
+  <script src="/static/js/research_result.js"></script>
+</body>
+</html>

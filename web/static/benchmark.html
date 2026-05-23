@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benchmark — Claude Quant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-6">
+    <span class="text-blue-400 font-bold tracking-tight text-lg">CLAUDE QUANT</span>
+    <nav class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-gray-100 transition-colors">回测</a>
+      <a href="/strategies.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略库</a>
+      <a href="/research.html" class="text-gray-400 hover:text-gray-100 transition-colors">因子研究</a>
+      <a href="/benchmark.html" class="text-gray-100 font-medium">Benchmark</a>
+      <a href="/data.html" class="text-gray-400 hover:text-gray-100 transition-colors">数据管理</a>
+      <a href="/compare.html" class="text-gray-400 hover:text-gray-100 transition-colors">策略对比</a>
+      <a href="/live.html" class="text-gray-400 hover:text-gray-100 transition-colors">交易</a>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-100 mb-1">Benchmark</h1>
+      <p class="text-sm text-gray-500">固定实验配置、导出实验包、对齐回测和外部平台验证</p>
+    </div>
+
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-gray-300 mb-4">实验配置</h2>
+      <form id="benchmark-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">价格数据 CSV</label>
+          <input id="price-csv" type="text" placeholder="data/research/prices.csv"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">输出目录</label>
+          <input id="output-dir" type="text" placeholder="output/benchmark/web_run"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">因子</label>
+          <input id="factor-id" type="text" value="momentum_20d"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">股票池</label>
+          <input id="universe-id" type="text" value="HS300_PIT"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Top N</label>
+          <input id="top-n" type="number" min="1" value="20"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">调仓频率</label>
+          <select id="rebalance" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+            <option value="weekly">weekly</option>
+            <option value="daily">daily</option>
+            <option value="monthly">monthly</option>
+          </select>
+        </div>
+        <div class="md:col-span-2 flex justify-end">
+          <button id="submit-btn" type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm text-white transition-colors">运行 Benchmark</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">实验包</h2>
+        <span id="status-pill" class="text-xs text-gray-500">idle</span>
+      </div>
+      <div class="h-2 bg-gray-800 rounded-full overflow-hidden mb-4">
+        <div id="progress-bar" class="h-full bg-blue-500 rounded-full transition-all" style="width: 0%;"></div>
+      </div>
+      <div id="benchmark-output" class="text-sm text-gray-500">等待运行 benchmark。</div>
+    </section>
+  </main>
+
+  <script src="/static/js/benchmark.js"></script>
+</body>
+</html>

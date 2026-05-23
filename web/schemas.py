@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any, Optional
+from datetime import date
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -307,6 +307,173 @@ class RunSummary(BaseModel):
 
 class HistoryResponse(BaseModel):
     runs: list[RunSummary]
+
+
+# ── 因子研究 ─────────────────────────────────────────────────────────────────
+
+
+class FactorPresetInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class FactorPresetsResponse(BaseModel):
+    factors: list[FactorPresetInfo]
+
+
+class FactorResearchRequest(BaseModel):
+    factor_id: str
+    factor_params: dict[str, Any] = Field(default_factory=dict)
+    universe_id: str
+    price_csv: Optional[str] = None
+    pit_csv: Optional[str] = None
+    start_date: date
+    end_date: date
+    forward_periods: list[int] = Field(default_factory=lambda: [1, 5, 20])
+    groups: int = Field(default=5, ge=2, le=20)
+    ic_method: Literal["spearman", "pearson"] = "spearman"
+    rebalance: Literal["daily", "weekly", "monthly"] = "weekly"
+    sample_split_date: Optional[date] = None
+    winsorize: bool = True
+    zscore: bool = True
+    neutralize: Literal["none", "industry", "size", "industry_size"] = "none"
+    output_dir: Optional[str] = None
+
+
+class FactorResearchSubmitResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+class FactorResearchStatus(BaseModel):
+    run_id: str
+    status: str
+    progress: int = 0
+    current_step: Optional[str] = None
+    elapsed_seconds: float = 0.0
+    error: Optional[str] = None
+
+
+class FactorResearchResultResponse(BaseModel):
+    run_id: str
+    status: str
+    factor_id: str
+    factor_name: str
+    universe_id: str
+    start_date: date
+    end_date: date
+    summary: dict[str, Any] = Field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    tables: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    request: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class FactorResearchRunSummary(BaseModel):
+    run_id: str
+    factor_id: str
+    factor_name: str
+    universe_id: str
+    start_date: str
+    end_date: str
+    status: str
+    created_at: str
+
+
+class FactorResearchHistoryResponse(BaseModel):
+    runs: list[FactorResearchRunSummary]
+
+
+# ── Benchmark ───────────────────────────────────────────────────────────────
+
+
+class BenchmarkRunRequest(BaseModel):
+    price_csv: str
+    output_dir: Optional[str] = None
+    universe_id: Optional[str] = None
+    pit_csv: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    lookback: int = Field(default=20, ge=1)
+    top_n: int = Field(default=20, ge=1)
+    rebalance: Literal["daily", "weekly"] = "weekly"
+    initial_capital: float = Field(default=1_000_000, gt=0)
+    commission_rate: float = Field(default=0.00015, ge=0.0)
+    stamp_tax_rate: float = Field(default=0.0005, ge=0.0)
+    min_commission: float = Field(default=5.0, ge=0.0)
+    max_position_weight: float = Field(default=1.0, gt=0.0, le=1.0)
+
+
+class BenchmarkSubmitResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+class BenchmarkStatus(BaseModel):
+    run_id: str
+    status: str
+    progress: int = 0
+    current_step: Optional[str] = None
+    elapsed_seconds: float = 0.0
+    error: Optional[str] = None
+
+
+class BenchmarkResultResponse(BaseModel):
+    run_id: str
+    status: str
+    name: str
+    universe_id: Optional[str] = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    tables: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    request: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class BenchmarkRunSummary(BaseModel):
+    run_id: str
+    name: str
+    universe_id: Optional[str] = None
+    status: str
+    created_at: str
+
+
+class BenchmarkHistoryResponse(BaseModel):
+    runs: list[BenchmarkRunSummary]
+
+
+# ── 交叉验证 ─────────────────────────────────────────────────────────────────
+
+
+class ValidationTemplateRequest(BaseModel):
+    platform_name: str = "external"
+    output_dir: Optional[str] = None
+
+
+class CrossValidationRunRequest(BaseModel):
+    platform_name: str = "external"
+    local_equity_csv: str
+    local_holdings_csv: Optional[str] = None
+    local_trades_csv: Optional[str] = None
+    external_equity_csv: str
+    external_holdings_csv: Optional[str] = None
+    external_trades_csv: Optional[str] = None
+    output_dir: Optional[str] = None
+    equity_abs: float = Field(default=1.0, ge=0.0)
+    quantity_abs: float = Field(default=1e-6, ge=0.0)
+    price_abs: float = Field(default=0.01, ge=0.0)
+    amount_abs: float = Field(default=1.0, ge=0.0)
+    fee_abs: float = Field(default=0.01, ge=0.0)
+
+
+class ValidationArtifactResponse(BaseModel):
+    artifact_set_id: str
+    summary: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
 
 
 # ── 股票池 ────────────────────────────────────────────────────────────────────
