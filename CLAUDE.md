@@ -50,9 +50,12 @@ run_web.py  启动入口
 - Web 模拟盘：live.html 监控页 + /api/live（start/stop/status/stream/sessions），SSE 实时推送持仓和成交
 
 ## 缺失模块（待实现）
-- P0 实盘上线：交易记录持久化（当前全在内存）、QMT 断连重连、max_daily_trades 风控执行、Web 层接入 QMT 实盘模式
-- P1 体验改善：live.html 净值曲线图表、ST 股涨跌停修正（±5%）、模拟盘股票搜索选择器、多策略并行管理
-- P2 进阶功能：WebSocket 双向通信（手动下单/撤单）、实盘告警通知、策略热加载
+- P0 项目基线：GitHub Actions CI、Python 版本上限、开发说明
+- P1 研究能力：`cq/research` 单因子分层、Forward Return、Rank IC、Markdown 因子报告
+- P1 Benchmark：标准 20 日动量 Top20、动量缓冲区、每日持仓/成交导出
+- P1 股票池：UniverseProvider、ALL_A_LIQUID、PIT 历史成分股
+- P1 实盘安全：订单幂等、重启恢复、交易计划人工确认、风控总开关、日报/报警
+- P2 交叉验证：与聚宽/米筐/掘金/QMT 模拟盘对比每日净值、持仓、成交、费用和拒单
 
 ## 关键设计
 - Strategy 只能通过 StrategyContext（只读快照）访问状态，不直接持有 Portfolio
@@ -69,3 +72,12 @@ run_web.py  启动入口
 
 - **重点关注服务端接口交互**：排查 web 端页面问题时，优先检查 API 请求/响应、SSE 数据流、错误状态码等与后端的交互，而不是 UI 高亮、样式、CSS 类等视觉问题。
 - **使用 Chrome DevTools MCP 调试**：不要用 Playwright 写测试的方式进行排查，直接使用 Chrome DevTools（https://skills.sh/chromedevtools/chrome-devtools-mcp/chrome-devtools）进行实时调试。
+
+---
+
+# 优化计划维护
+
+- 项目优化路线以 `docs/claude_quant_optimization_plan.md` 为准。
+- 每次开始较大的优化前，先查看该文件的“当前进度”和“下一步优化动作”。
+- 每次完成优化、修复、调整优先级或发现新风险后，同步更新该文件进度，避免只依赖对话记忆。
+- 提交代码前检查该计划文件是否需要同步更新。
