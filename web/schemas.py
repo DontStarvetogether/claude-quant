@@ -162,6 +162,20 @@ class DataDiagnostics(BaseModel):
     summary: DataDiagnosticsSummary = Field(default_factory=DataDiagnosticsSummary)
 
 
+class UniverseDiagnostics(BaseModel):
+    universe_id: str = "custom_static"
+    universe_name: str = "自定义静态股票池"
+    source: str = "user_selection"
+    construction: str = "static"
+    selection_time: str = "run_submit"
+    symbol_count: int = 0
+    survivorship_bias_risk: str = "unknown"
+    history_membership_available: bool = False
+    point_in_time: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class TradeRecord(BaseModel):
     trade_id: str
     symbol: str
@@ -201,6 +215,7 @@ class BacktestResultResponse(BaseModel):
     risk_events: list[dict[str, Any]] = Field(default_factory=list)
     benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
     data_diagnostics: Optional[DataDiagnostics] = None
+    universe_diagnostics: Optional[UniverseDiagnostics] = None
     metrics: MetricsDict
     equity_curve: EquityCurveData
     benchmark_curve: Optional[EquityCurveData] = None

@@ -197,3 +197,51 @@ def test_serialize_result_exposes_data_diagnostics():
     assert payload.data_diagnostics.symbols[0].status == "updated"
     assert payload.data_diagnostics.benchmark is not None
     assert payload.data_diagnostics.benchmark.error == "network down"
+
+
+def test_serialize_result_exposes_universe_diagnostics():
+    result = BacktestResult(
+        strategy_name="trend_rank",
+        symbols=["600519.SH", "000858.SZ"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 4),
+        initial_capital=1_000_000,
+        metrics=_metrics(),
+        equity_curve=pd.Series(
+            [1_000_000.0, 1_010_000.0],
+            index=[date(2024, 1, 2), date(2024, 1, 3)],
+        ),
+        trades=[],
+        rejected_orders=[],
+        universe_diagnostics={
+            "universe_id": "custom_static",
+            "universe_name": "自定义静态股票池",
+            "source": "user_selection",
+            "construction": "static",
+            "selection_time": "run_submit",
+            "symbol_count": 2,
+            "survivorship_bias_risk": "medium",
+            "history_membership_available": False,
+            "point_in_time": False,
+            "warnings": ["static_universe_survivorship_bias"],
+            "notes": ["多标的静态股票池未记录历史成分，存在幸存者偏差风险。"],
+        },
+    )
+    record = RunRecord(
+        run_id="run-4",
+        strategy_name="trend_rank",
+        symbols=["600519.SH", "000858.SZ"],
+        start_date="2024-01-01",
+        end_date="2024-01-04",
+        initial_capital=1_000_000,
+        status="completed",
+        result=result,
+        created_at=datetime(2024, 1, 5),
+    )
+
+    payload = serialize_result(record)
+
+    assert payload.universe_diagnostics is not None
+    assert payload.universe_diagnostics.construction == "static"
+    assert payload.universe_diagnostics.point_in_time is False
+    assert payload.universe_diagnostics.survivorship_bias_risk == "medium"

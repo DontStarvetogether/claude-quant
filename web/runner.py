@@ -8,6 +8,7 @@ BacktestEngine.run() 是同步阻塞的，在线程池中执行，
 from __future__ import annotations
 
 import time
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date as _date
 from typing import Any
@@ -38,6 +39,51 @@ def _diagnostic_summary(
         "cache_hit": cache_hit,
         "failed": failed,
         "missing": missing,
+    }
+
+
+def _build_universe_diagnostics(
+    strategy_id: str,
+    symbols: list[str],
+    request: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """记录股票池构造方式，显式暴露静态股票池的幸存者偏差风险。"""
+    symbol_count = len(set(symbols))
+    requested_universe = (request or {}).get("universe") if request else None
+    universe_id = requested_universe or "custom_static"
+    universe_name = "自定义静态股票池"
+    source = "user_selection"
+    warnings: list[str] = []
+    notes: list[str] = []
+
+    if requested_universe:
+        universe_name = str(requested_universe)
+        source = "request"
+
+    if strategy_id == "trend_rank" and symbol_count >= 20:
+        risk = "high"
+        warnings.append("static_universe_survivorship_bias")
+        notes.append("组合选股策略使用静态股票池回测历史，可能明显高估历史可投资机会。")
+    elif symbol_count >= 10:
+        risk = "medium"
+        warnings.append("static_universe_survivorship_bias")
+        notes.append("多标的静态股票池未记录历史成分，存在幸存者偏差风险。")
+    else:
+        risk = "low"
+        notes.append("少量自选标的回测仍是静态样本，不能代表当时完整可投资范围。")
+
+    return {
+        "universe_id": universe_id,
+        "universe_name": universe_name,
+        "source": source,
+        "construction": "static",
+        "selection_time": "run_submit",
+        "symbol_count": symbol_count,
+        "survivorship_bias_risk": risk,
+        "history_membership_available": False,
+        "point_in_time": False,
+        "warnings": warnings,
+        "notes": notes,
     }
 
 
@@ -331,11 +377,18 @@ def _run_backtest(
 
         engine = BacktestEngine(config, progress_callback=on_progress)
         engine.add_strategy(strategy, symbols=symbols)
+        request_snapshot = json.loads(record.request_json) if record.request_json else None
+        universe_diagnostics = _build_universe_diagnostics(
+            strategy_id,
+            symbols,
+            request=request_snapshot,
+        )
         result = engine.run(
             start_date,
             end_date,
             benchmark=benchmark,
             data_diagnostics=data_diagnostics,
+            universe_diagnostics=universe_diagnostics,
         )
 
         elapsed = time.monotonic() - start_time

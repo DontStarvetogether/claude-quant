@@ -118,6 +118,7 @@ function renderPage(data) {
   renderStrategyAssessment(data);
   renderAlphaBreakdown(data);
   renderDataDiagnostics(data.data_diagnostics);
+  renderUniverseDiagnostics(data.universe_diagnostics);
   renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark_name || data.benchmark);
   renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics, data);

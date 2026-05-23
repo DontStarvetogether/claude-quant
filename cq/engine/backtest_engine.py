@@ -68,6 +68,7 @@ class BacktestResult:
     alpha_beta_available: bool = False
     benchmark_diagnostics: Optional[dict[str, Any]] = None
     data_diagnostics: Optional[dict[str, Any]] = None
+    universe_diagnostics: Optional[dict[str, Any]] = None
     data_quality: Optional[dict[str, Any]] = None
     execution_diagnostics: Optional[dict[str, Any]] = None
     risk_events: list[dict[str, Any]] = field(default_factory=list)
@@ -132,6 +133,7 @@ class BacktestEngine:
         end_date: str | date,
         benchmark: str | None = None,
         data_diagnostics: dict[str, Any] | None = None,
+        universe_diagnostics: dict[str, Any] | None = None,
     ) -> BacktestResult:
         """运行回测，返回结果。"""
         if self._strategy is None:
@@ -307,6 +309,7 @@ class BacktestEngine:
             alpha_beta_available=alpha_beta_available,
             benchmark_diagnostics=benchmark_diagnostics,
             data_diagnostics=data_diagnostics,
+            universe_diagnostics=universe_diagnostics,
             data_quality=self._data_quality(data_diagnostics),
             execution_diagnostics=self._execution_diagnostics(all_trades, rejected),
             risk_events=risk.events,
