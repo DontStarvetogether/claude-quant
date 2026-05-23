@@ -37,6 +37,15 @@
   <!-- 主内容（结果加载后显示）-->
   <main id="main-content" class="hidden max-w-7xl mx-auto px-4 py-8 space-y-8">
 
+    <!-- 可信度总览 -->
+    <section id="trust-overview" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">可信度总览</h2>
+        <span id="trust-overview-summary" class="text-xs text-gray-500">—</span>
+      </div>
+      <div id="trust-overview-body"></div>
+    </section>
+
     <!-- 关键指标卡片 -->
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <div class="metric-card">
@@ -124,6 +133,15 @@
       <div id="universe-diagnostics-body"></div>
     </section>
 
+    <!-- 诊断详情 -->
+    <section id="diagnostics-detail" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between gap-4 mb-4">
+        <h2 class="text-sm font-semibold text-gray-300">诊断详情</h2>
+        <span class="text-xs text-gray-500">Execution / Metrics / Risk</span>
+      </div>
+      <div id="diagnostics-detail-body"></div>
+    </section>
+
     <!-- 权益曲线 -->
     <section class="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <h2 class="text-sm font-semibold text-gray-300 mb-4">权益曲线 & 回撤</h2>
@@ -189,7 +207,7 @@
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/result/alpha.js?v=1"></script>
-  <script src="/static/js/result/diagnostics.js?v=3"></script>
-  <script src="/static/js/result.js?v=27"></script>
+  <script src="/static/js/result/diagnostics.js?v=4"></script>
+  <script src="/static/js/result.js?v=28"></script>
 </body>
 </html>

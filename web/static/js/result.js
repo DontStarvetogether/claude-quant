@@ -115,10 +115,12 @@ function renderPage(data) {
   document.title = `${data.strategy_name} 回测结果 — Claude Quant`;
 
   renderMetricCards(data.metrics, data);
+  renderTrustOverview(data);
   renderStrategyAssessment(data);
   renderAlphaBreakdown(data);
   renderDataDiagnostics(data.data_diagnostics);
   renderUniverseDiagnostics(data.universe_diagnostics);
+  renderDiagnosticsDetail(data);
   renderEquityChart(data.equity_curve, data.metrics, data.trades, data.benchmark_curve, data.benchmark_name || data.benchmark);
   renderMonthlyReturns(data.equity_curve);
   renderDetailMetrics(data.metrics, data);
@@ -458,6 +460,8 @@ function formatRejectSummary(execDiag) {
 function renderDetailMetrics(m, data = {}) {
   const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
   const execDiag = data.execution_diagnostics || {};
+  const assumptions = data.execution_assumptions || {};
+  const metricDiag = data.metric_diagnostics || {};
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
     ['年化收益率', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return)],
@@ -477,12 +481,17 @@ function renderDetailMetrics(m, data = {}) {
     ['已实现盈亏', Fmt.money(m.realized_pnl || 0), Fmt.colorClass(m.realized_pnl || 0)],
     ['未实现/未配对盈亏', Fmt.money(m.unrealized_pnl || 0), Fmt.colorClass(m.unrealized_pnl || 0)],
     ['撮合模型', data.execution_model || 'next_open', ''],
+    ['信号/成交时点', `${assumptions.signal_timing || 'D 日收盘后'} / ${assumptions.fill_timing || 'D+1 开盘'}`, ''],
+    ['限价单语义', assumptions.uses_intraday_touch ? '使用日内 high/low 触达' : '仅按 D+1 开盘价判断', 'text-yellow-400'],
     ['引擎版本', data.engine_version || '—', ''],
     ['容量缩量成交', `${execDiag.capacity_limited_count || 0} 笔`, ''],
     ['容量拒单', `${execDiag.capacity_rejected_count || 0} 笔`, ''],
+    ['部分成交', `${execDiag.partial_fill_count || 0} 笔`, ''],
     ['总拒单', `${execDiag.rejected_count ?? data.rejected_count ?? 0} 笔`, ''],
     ['主要拒单原因', formatRejectSummary(execDiag), ''],
     ['平均成交比例', Fmt.pct(execDiag.avg_fill_ratio ?? 1, 1), ''],
+    ['指标样本天数', `${metricDiag.sample_days ?? '—'} 天`, ''],
+    ['胜率口径', metricDiag.win_rate_basis || 'completed_round_trips_fifo', ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
 
@@ -702,7 +711,7 @@ function _renderMonthlyHeatmap(monthly) {
 
 // ── 导出 CSV ──────────────────────────────────────────────────────────────────
 function exportCsv(trades) {
-  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '请求数量', '成交数量', '成交比例', '成交额', '佣金', '印花税', '净额', '持有现金'];
+  const header = ['交易ID', '日期', '方向', '股票代码', '公司名称', '价格', '请求数量', '成交数量', '成交比例', '成交额', '费用', '佣金', '印花税', '净额', '持有现金'];
   const rows = trades.map(t => [
     t.trade_id,
     t.trade_date,
@@ -711,9 +720,10 @@ function exportCsv(trades) {
     STOCK_NAMES[t.symbol] || '',
     t.price,
     t.requested_quantity || t.quantity,
-    t.quantity,
+    t.filled_quantity || t.quantity,
     t.fill_ratio ?? 1,
     t.amount,
+    t.fee ?? (t.commission + t.stamp_tax),
     t.commission,
     t.stamp_tax,
     t.net_amount,

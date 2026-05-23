@@ -11,7 +11,7 @@ DataPipeline：协调 DataSource + PriceAdjuster + ParquetStore。
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from typing import Any, Optional
 
@@ -40,6 +40,21 @@ class SymbolUpdateDiagnostic:
     error: Optional[str] = None
     list_date: Optional[str] = None
     coverage_status: str = "unknown"
+    source: Optional[str] = None
+    cache_path: Optional[str] = None
+    cache_updated_at: Optional[str] = None
+    raw_first_date: Optional[str] = None
+    raw_last_date: Optional[str] = None
+    qfq_first_date: Optional[str] = None
+    qfq_last_date: Optional[str] = None
+    factor_first_date: Optional[str] = None
+    factor_last_date: Optional[str] = None
+    qfq_available: bool = False
+    factor_available: bool = False
+    st_status_source: str = "unavailable"
+    limit_price_source: str = "exchange_or_calculated"
+    repair_actions: list[str] = field(default_factory=list)
+    quality_level: str = "unknown"
     data_quality: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict:
@@ -188,6 +203,7 @@ class DataPipeline:
         if total_new == 0:
             logger.info(f"{symbol} 数据已是最新")
 
+        repair_actions: list[str] = []
         data_quality = self._inspect_local_data_quality(
             symbol, requested_start, end_date, list_date=list_date
         )
@@ -195,9 +211,11 @@ class DataPipeline:
         if qfq_repair_warnings.intersection(data_quality.get("warnings") or []):
             logger.warning(f"{symbol} qfq 缓存结构或价格尺度不一致，自动重算 qfq 缓存")
             self._recalculate_qfq(symbol)
+            repair_actions.append("recalculate_qfq")
             data_quality = self._inspect_local_data_quality(
                 symbol, requested_start, end_date, list_date=list_date
             )
+        cache_meta = self._cache_lineage(symbol)
         return SymbolUpdateDiagnostic(
             symbol=symbol,
             status=status,
@@ -210,6 +228,21 @@ class DataPipeline:
             error="; ".join(errors) if errors else None,
             list_date=str(list_date) if list_date else None,
             coverage_status=str(data_quality.get("coverage_status", "unknown")),
+            source=self._source.__class__.__name__,
+            cache_path=cache_meta["cache_path"],
+            cache_updated_at=cache_meta["cache_updated_at"],
+            raw_first_date=cache_meta["raw_first_date"],
+            raw_last_date=cache_meta["raw_last_date"],
+            qfq_first_date=cache_meta["qfq_first_date"],
+            qfq_last_date=cache_meta["qfq_last_date"],
+            factor_first_date=cache_meta["factor_first_date"],
+            factor_last_date=cache_meta["factor_last_date"],
+            qfq_available=bool(data_quality.get("qfq_available", False)),
+            factor_available=bool(data_quality.get("factor_available", False)),
+            st_status_source=str(data_quality.get("st_status_source", "unavailable")),
+            limit_price_source=str(data_quality.get("limit_price_source", "exchange_or_calculated")),
+            repair_actions=repair_actions,
+            quality_level=str(data_quality.get("quality_level", "unknown")),
             data_quality=data_quality,
         )
 
@@ -462,11 +495,14 @@ class DataPipeline:
         if raw_df.empty:
             return {
                 "status": "missing",
+                "quality_level": "failed",
                 "warnings": ["raw_empty"],
                 "coverage_status": "missing",
                 "list_date": str(list_date) if list_date else None,
                 "qfq_available": False,
                 "factor_available": not self._store.read_adj_factors(symbol).empty,
+                "st_status_source": "unavailable",
+                "limit_price_source": "unavailable",
             }
 
         dates = pd.to_datetime(raw_df["trade_date"]).dt.date
@@ -485,6 +521,19 @@ class DataPipeline:
             warnings.append("coverage_incomplete")
         if raw_df["trade_date"].duplicated().any():
             warnings.append("duplicate_trade_date")
+        if not dates.is_monotonic_increasing:
+            warnings.append("trade_date_not_sorted")
+        if "volume" in raw_df.columns and (pd.to_numeric(raw_df["volume"], errors="coerce").fillna(0) <= 0).any():
+            warnings.append("zero_volume_days")
+        if "open" in raw_df.columns and (pd.to_numeric(raw_df["open"], errors="coerce").fillna(0) <= 0).any():
+            warnings.append("invalid_open_price")
+        limit_price_source = "exchange_or_calculated"
+        if {"limit_up", "limit_down"}.difference(raw_df.columns):
+            warnings.append("limit_price_missing")
+            limit_price_source = "unavailable"
+        elif "pre_close" not in raw_df.columns or (pd.to_numeric(raw_df["pre_close"], errors="coerce").fillna(0) <= 0).any():
+            warnings.append("limit_price_approximate")
+            limit_price_source = "approximate"
         if qfq_df.empty:
             warnings.append("qfq_missing")
         elif "adj_factor" not in qfq_df.columns:
@@ -493,18 +542,78 @@ class DataPipeline:
             warnings.append("qfq_price_scale_mismatch")
 
         adj_df = self._store.read_adj_factors(symbol)
-        hard_warnings = [w for w in warnings if w != "pre_listing_gap"]
+        if adj_df.empty:
+            warnings.append("factor_missing")
+        hard_warnings = [
+            w for w in warnings
+            if w
+            not in {
+                "pre_listing_gap",
+                "zero_volume_days",
+                "limit_price_approximate",
+            }
+        ]
         status = "ok" if not hard_warnings else "degraded"
+        if hard_warnings:
+            quality_level = "failed" if any(
+                w in hard_warnings
+                for w in {
+                    "coverage_incomplete",
+                    "duplicate_trade_date",
+                    "trade_date_not_sorted",
+                    "invalid_open_price",
+                    "limit_price_missing",
+                    "factor_missing",
+                    "qfq_missing",
+                    "qfq_adjust_factor_missing",
+                    "qfq_price_scale_mismatch",
+                }
+            ) else "warning"
+        elif warnings:
+            quality_level = "warning"
+        else:
+            quality_level = "pass"
         return {
             "status": status,
+            "quality_level": quality_level,
             "warnings": warnings,
             "coverage_status": coverage_status,
             "list_date": str(list_date) if list_date else None,
             "qfq_available": not qfq_df.empty,
             "factor_available": not adj_df.empty,
+            "st_status_source": "unavailable",
+            "limit_price_source": limit_price_source,
             "local_first_date": str(local_first),
             "local_last_date": str(local_last),
         }
+
+    def _cache_lineage(self, symbol: str) -> dict[str, Any]:
+        """返回本地缓存的文件路径、更新时间和各层数据覆盖范围。"""
+        raw_path = self._store._bar_path(symbol, "raw")
+        qfq_path = self._store._bar_path(symbol, "qfq")
+        factor_path = self._store._adj_path(symbol)
+        raw_min, raw_max = self._store.get_available_dates(symbol, adjust="raw")
+        qfq_min, qfq_max = self._store.get_available_dates(symbol, adjust="qfq")
+        factor_first, factor_last = self._factor_dates(symbol)
+        existing = [p for p in [raw_path, qfq_path, factor_path] if p.exists()]
+        updated_at = max((p.stat().st_mtime for p in existing), default=None)
+        return {
+            "cache_path": str(raw_path.parent) if raw_path.parent.exists() else None,
+            "cache_updated_at": datetime.fromtimestamp(updated_at).isoformat() if updated_at else None,
+            "raw_first_date": str(raw_min) if raw_min else None,
+            "raw_last_date": str(raw_max) if raw_max else None,
+            "qfq_first_date": str(qfq_min) if qfq_min else None,
+            "qfq_last_date": str(qfq_max) if qfq_max else None,
+            "factor_first_date": str(factor_first) if factor_first else None,
+            "factor_last_date": str(factor_last) if factor_last else None,
+        }
+
+    def _factor_dates(self, symbol: str) -> tuple[date | None, date | None]:
+        adj_df = self._store.read_adj_factors(symbol)
+        if adj_df.empty or "trade_date" not in adj_df.columns:
+            return None, None
+        dates = pd.to_datetime(adj_df["trade_date"]).dt.date
+        return dates.min(), dates.max()
 
     @staticmethod
     def _qfq_price_scale_mismatch(raw_df: pd.DataFrame, qfq_df: pd.DataFrame) -> bool:

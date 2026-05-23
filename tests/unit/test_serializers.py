@@ -154,6 +154,18 @@ def test_serialize_result_exposes_data_diagnostics():
                     "local_last_date": "2024-01-03",
                     "requested_start": "2024-01-01",
                     "requested_end": "2024-01-04",
+                    "source": "FakeSource",
+                    "cache_updated_at": "2024-01-04T10:00:00",
+                    "qfq_first_date": "2024-01-02",
+                    "qfq_last_date": "2024-01-03",
+                    "factor_first_date": "2024-01-02",
+                    "factor_last_date": "2024-01-03",
+                    "qfq_available": True,
+                    "factor_available": True,
+                    "st_status_source": "unavailable",
+                    "limit_price_source": "exchange_or_calculated",
+                    "repair_actions": ["recalculate_qfq"],
+                    "quality_level": "pass",
                     "error": None,
                 }
             ],
@@ -195,6 +207,9 @@ def test_serialize_result_exposes_data_diagnostics():
     assert payload.data_diagnostics is not None
     assert payload.data_diagnostics.summary.total == 2
     assert payload.data_diagnostics.symbols[0].status == "updated"
+    assert payload.data_diagnostics.symbols[0].source == "FakeSource"
+    assert payload.data_diagnostics.symbols[0].repair_actions == ["recalculate_qfq"]
+    assert payload.data_diagnostics.symbols[0].quality_level == "pass"
     assert payload.data_diagnostics.benchmark is not None
     assert payload.data_diagnostics.benchmark.error == "network down"
 
@@ -221,6 +236,8 @@ def test_serialize_result_exposes_universe_diagnostics():
             "selection_time": "run_submit",
             "symbol_count": 2,
             "survivorship_bias_risk": "medium",
+            "universe_type": "static_builtin",
+            "point_in_time_available": False,
             "history_membership_available": False,
             "point_in_time": False,
             "warnings": ["static_universe_survivorship_bias"],
@@ -243,5 +260,61 @@ def test_serialize_result_exposes_universe_diagnostics():
 
     assert payload.universe_diagnostics is not None
     assert payload.universe_diagnostics.construction == "static"
+    assert payload.universe_diagnostics.universe_type == "static_builtin"
     assert payload.universe_diagnostics.point_in_time is False
     assert payload.universe_diagnostics.survivorship_bias_risk == "medium"
+
+
+def test_serialize_result_exposes_execution_and_metric_diagnostics():
+    result = BacktestResult(
+        strategy_name="double_ma",
+        symbols=["600519.SH"],
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 1, 4),
+        initial_capital=1_000_000,
+        metrics=_metrics(),
+        equity_curve=pd.Series(
+            [1_000_000.0, 1_010_000.0],
+            index=[date(2024, 1, 2), date(2024, 1, 3)],
+        ),
+        trades=[],
+        rejected_orders=[],
+        execution_assumptions={
+            "execution_model": "next_open",
+            "signal_timing": "D 日收盘后产生信号",
+            "fill_timing": "D+1 交易日开盘价撮合",
+            "uses_intraday_touch": False,
+        },
+        execution_diagnostics={
+            "filled_count": 0,
+            "rejected_count": 0,
+            "partial_fill_count": 0,
+        },
+        metric_diagnostics={
+            "quality_level": "warning",
+            "sample_days": 1,
+            "round_trip_count": 0,
+            "win_rate_basis": "completed_round_trips_fifo",
+            "warnings": ["sample_days_too_few"],
+        },
+    )
+    record = RunRecord(
+        run_id="run-5",
+        strategy_name="double_ma",
+        symbols=["600519.SH"],
+        start_date="2024-01-01",
+        end_date="2024-01-04",
+        initial_capital=1_000_000,
+        status="completed",
+        result=result,
+        created_at=datetime(2024, 1, 5),
+    )
+
+    payload = serialize_result(record)
+
+    assert payload.execution_assumptions is not None
+    assert payload.execution_assumptions["uses_intraday_touch"] is False
+    assert payload.execution_diagnostics is not None
+    assert payload.execution_diagnostics["partial_fill_count"] == 0
+    assert payload.metric_diagnostics is not None
+    assert payload.metric_diagnostics["win_rate_basis"] == "completed_round_trips_fifo"

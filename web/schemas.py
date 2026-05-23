@@ -168,6 +168,21 @@ class SymbolDataDiagnostic(BaseModel):
     error: Optional[str] = None
     list_date: Optional[str] = None
     coverage_status: str = "unknown"
+    source: Optional[str] = None
+    cache_path: Optional[str] = None
+    cache_updated_at: Optional[str] = None
+    raw_first_date: Optional[str] = None
+    raw_last_date: Optional[str] = None
+    qfq_first_date: Optional[str] = None
+    qfq_last_date: Optional[str] = None
+    factor_first_date: Optional[str] = None
+    factor_last_date: Optional[str] = None
+    qfq_available: bool = False
+    factor_available: bool = False
+    st_status_source: str = "unavailable"
+    limit_price_source: str = "unknown"
+    repair_actions: list[str] = Field(default_factory=list)
+    quality_level: str = "unknown"
     data_quality: Optional[dict[str, Any]] = None
 
 
@@ -193,6 +208,8 @@ class UniverseDiagnostics(BaseModel):
     selection_time: str = "run_submit"
     symbol_count: int = 0
     survivorship_bias_risk: str = "unknown"
+    universe_type: str = "static_builtin"
+    point_in_time_available: bool = False
     history_membership_available: bool = False
     point_in_time: bool = False
     warnings: list[str] = Field(default_factory=list)
@@ -212,9 +229,13 @@ class TradeRecord(BaseModel):
     net_amount: float
     cash_after: float  # 交易后持有现金
     requested_quantity: Optional[int] = None
+    filled_quantity: Optional[int] = None
     fill_ratio: float = 1.0
     capacity_limited: bool = False
     capacity_limit_qty: Optional[int] = None
+    reject_reason: Optional[str] = None
+    fee: float = 0.0
+    slippage_adjusted_price: Optional[float] = None
 
 
 class BacktestResultResponse(BaseModel):
@@ -235,6 +256,8 @@ class BacktestResultResponse(BaseModel):
     execution_model: Optional[str] = None
     data_quality: Optional[dict[str, Any]] = None
     execution_diagnostics: Optional[dict[str, Any]] = None
+    execution_assumptions: Optional[dict[str, Any]] = None
+    metric_diagnostics: Optional[dict[str, Any]] = None
     risk_events: list[dict[str, Any]] = Field(default_factory=list)
     benchmark_diagnostics: Optional[BenchmarkDiagnostics] = None
     data_diagnostics: Optional[DataDiagnostics] = None

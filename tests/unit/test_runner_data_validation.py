@@ -11,6 +11,7 @@ def make_diag(
     status: str = "cache_hit",
     coverage_status: str = "ok",
     qfq_available: bool = True,
+    factor_available: bool = True,
     used_cache: bool = True,
     warnings: list[str] | None = None,
 ) -> dict:
@@ -24,6 +25,7 @@ def make_diag(
         "data_quality": {
             "coverage_status": coverage_status,
             "qfq_available": qfq_available,
+            "factor_available": factor_available,
             "warnings": quality_warnings,
         },
     }
@@ -45,8 +47,14 @@ def test_validate_trade_symbol_data_passes_ok_data():
         make_diag(coverage_status="start_missing"),
         make_diag(coverage_status="end_missing"),
         make_diag(qfq_available=False),
+        make_diag(factor_available=False),
         make_diag(warnings=["qfq_adjust_factor_missing"]),
         make_diag(warnings=["qfq_price_scale_mismatch"]),
+        make_diag(warnings=["factor_missing"]),
+        make_diag(warnings=["duplicate_trade_date"]),
+        make_diag(warnings=["trade_date_not_sorted"]),
+        make_diag(warnings=["invalid_open_price"]),
+        make_diag(warnings=["limit_price_missing"]),
     ],
 )
 def test_validate_trade_symbol_data_blocks_bad_trade_data(diagnostic):
@@ -73,7 +81,9 @@ def test_universe_diagnostics_marks_trend_rank_static_pool_high_risk():
     )
 
     assert diagnostics["construction"] == "static"
+    assert diagnostics["universe_type"] == "user_supplied"
     assert diagnostics["point_in_time"] is False
+    assert diagnostics["point_in_time_available"] is False
     assert diagnostics["history_membership_available"] is False
     assert diagnostics["survivorship_bias_risk"] == "high"
     assert "static_universe_survivorship_bias" in diagnostics["warnings"]
@@ -108,3 +118,4 @@ def test_universe_diagnostics_preserves_request_universe_metadata():
     assert diagnostics["universe_name"] == "蓝筹稳健"
     assert diagnostics["source"] == "builtin_preset"
     assert diagnostics["construction"] == "static"
+    assert diagnostics["universe_type"] == "static_builtin"

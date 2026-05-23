@@ -71,6 +71,8 @@ class BacktestResult:
     universe_diagnostics: Optional[dict[str, Any]] = None
     data_quality: Optional[dict[str, Any]] = None
     execution_diagnostics: Optional[dict[str, Any]] = None
+    execution_assumptions: Optional[dict[str, Any]] = None
+    metric_diagnostics: Optional[dict[str, Any]] = None
     risk_events: list[dict[str, Any]] = field(default_factory=list)
     engine_version: str = ENGINE_VERSION
     execution_model: str = EXECUTION_MODEL
@@ -312,6 +314,16 @@ class BacktestEngine:
             universe_diagnostics=universe_diagnostics,
             data_quality=self._data_quality(data_diagnostics),
             execution_diagnostics=self._execution_diagnostics(all_trades, rejected),
+            execution_assumptions=self._execution_assumptions(),
+            metric_diagnostics=self._metric_diagnostics(
+                equity_series,
+                metrics,
+                all_trades,
+                rejected,
+                benchmark_status=benchmark_status,
+                alpha_beta_available=alpha_beta_available,
+                data_quality=self._data_quality(data_diagnostics),
+            ),
             risk_events=risk.events,
             trades=all_trades,
             rejected_orders=rejected,
@@ -357,12 +369,17 @@ class BacktestEngine:
         missing = int(summary.get("missing", 0) or 0)
         failed = int(summary.get("failed", 0) or 0)
         total = int(summary.get("total", 0) or 0)
-        if missing:
-            status = "missing"
-        elif failed:
-            status = "degraded"
+        symbols = data_diagnostics.get("symbols") or []
+        levels = [
+            ((item.get("data_quality") or {}).get("quality_level") or item.get("quality_level"))
+            for item in symbols
+        ]
+        if missing or "failed" in levels:
+            status = "failed"
+        elif failed or "warning" in levels:
+            status = "warning"
         elif total:
-            status = "ok"
+            status = "pass"
         else:
             status = "unknown"
         return {
@@ -370,6 +387,23 @@ class BacktestEngine:
             "total": total,
             "failed": failed,
             "missing": missing,
+            "warning": sum(1 for level in levels if level == "warning"),
+            "pass": sum(1 for level in levels if level == "pass"),
+        }
+
+    def _execution_assumptions(self) -> dict[str, Any]:
+        """结果级成交语义说明，避免用户把日线回测误读成日内撮合。"""
+        return {
+            "execution_model": EXECUTION_MODEL,
+            "signal_timing": "D 日收盘后产生信号",
+            "fill_timing": "D+1 交易日开盘价撮合",
+            "limit_order_semantics": "限价单仅按 D+1 开盘价判断是否成交，未使用日内 high/low 触达",
+            "uses_intraday_touch": False,
+            "capacity_limit_enabled": bool(self._config.engine.enable_capacity_limit),
+            "max_volume_participation": float(self._config.engine.max_volume_participation),
+            "partial_fill_allowed": True,
+            "board_lot": 100,
+            "price_scale": self._config.engine.adjust,
         }
 
     @staticmethod
@@ -408,8 +442,52 @@ class BacktestEngine:
             "capacity_rejected_count": len(capacity_rejected),
             "avg_fill_ratio": round(sum(ratios) / len(ratios), 6) if ratios else 1.0,
             "rejected_count": len(rejected),
+            "partial_fill_count": sum(1 for ratio in ratios if ratio < 0.999999),
+            "filled_count": len(trades),
             "reject_categories": reject_categories,
             "top_reject_reasons": top_reject_reasons,
+        }
+
+    @staticmethod
+    def _metric_diagnostics(
+        equity_curve: pd.Series,
+        metrics: MetricsResult,
+        trades: list[Trade],
+        rejected: list[tuple],
+        benchmark_status: str,
+        alpha_beta_available: bool,
+        data_quality: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """解释绩效指标的样本充分性和主要口径风险。"""
+        sample_days = max(0, len(equity_curve) - 1)
+        fill_count = len(trades)
+        round_trip_count = int(getattr(metrics, "round_trip_count", 0) or 0)
+        warnings: list[str] = []
+        if sample_days < 60:
+            warnings.append("sample_days_too_few")
+        if round_trip_count < 8:
+            warnings.append("round_trips_too_few")
+        if benchmark_status != "not_requested" and not alpha_beta_available:
+            warnings.append("benchmark_unavailable")
+        if data_quality and data_quality.get("status") in {"failed", "missing"}:
+            warnings.append("data_quality_failed")
+        elif data_quality and data_quality.get("status") == "warning":
+            warnings.append("data_quality_warning")
+        if rejected:
+            warnings.append("orders_rejected")
+        level = "warning" if warnings else "pass"
+        if "data_quality_failed" in warnings:
+            level = "failed"
+        return {
+            "quality_level": level,
+            "sample_days": sample_days,
+            "fill_count": fill_count,
+            "round_trip_count": round_trip_count,
+            "rejected_order_count": len(rejected),
+            "win_rate_basis": "completed_round_trips_fifo",
+            "return_basis": "equity_curve_eod",
+            "annualization_trading_days": PerformanceMetrics.TRADING_DAYS,
+            "warnings": warnings,
         }
 
     @staticmethod

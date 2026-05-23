@@ -62,6 +62,13 @@ def make_bars(dates: list[date]) -> pd.DataFrame:
     })
 
 
+def make_adj(dates: list[date]) -> pd.DataFrame:
+    return pd.DataFrame({
+        "trade_date": dates,
+        "adj_factor": [1.0] * len(dates),
+    })
+
+
 def make_pipeline(tmp_path, source: DataSource) -> DataPipeline:
     store = ParquetStore(tmp_path)
     calendar = TradingCalendar([
@@ -74,7 +81,8 @@ def make_pipeline(tmp_path, source: DataSource) -> DataPipeline:
 
 
 def test_update_symbol_diagnostic_updated(tmp_path):
-    pipeline = make_pipeline(tmp_path, FakeSource(make_bars([date(2024, 1, 2), date(2024, 1, 3)])))
+    dates = [date(2024, 1, 2), date(2024, 1, 3)]
+    pipeline = make_pipeline(tmp_path, FakeSource(make_bars(dates), make_adj(dates)))
 
     diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
 
@@ -83,10 +91,21 @@ def test_update_symbol_diagnostic_updated(tmp_path):
     assert diag.used_cache is True
     assert diag.local_first_date == "2024-01-02"
     assert diag.local_last_date == "2024-01-03"
+    assert diag.source == "FakeSource"
+    assert diag.cache_path is not None
+    assert diag.raw_first_date == "2024-01-02"
+    assert diag.qfq_first_date == "2024-01-02"
+    assert diag.qfq_available is True
+    assert diag.factor_available is True
+    assert diag.st_status_source == "unavailable"
+    assert diag.limit_price_source == "exchange_or_calculated"
+    assert diag.quality_level == "pass"
+    assert diag.data_quality["quality_level"] == "pass"
 
 
 def test_update_symbol_diagnostic_cache_hit(tmp_path):
-    pipeline = make_pipeline(tmp_path, FakeSource(make_bars([date(2024, 1, 2), date(2024, 1, 3)])))
+    dates = [date(2024, 1, 2), date(2024, 1, 3)]
+    pipeline = make_pipeline(tmp_path, FakeSource(make_bars(dates), make_adj(dates)))
     pipeline.update_symbol("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
 
     diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
@@ -116,7 +135,8 @@ def test_update_symbol_diagnostic_failed_without_cache(tmp_path):
 
 
 def test_update_symbol_diagnostic_failed_with_cache(tmp_path):
-    pipeline = make_pipeline(tmp_path, FakeSource(make_bars([date(2024, 1, 2), date(2024, 1, 3)])))
+    dates = [date(2024, 1, 2), date(2024, 1, 3)]
+    pipeline = make_pipeline(tmp_path, FakeSource(make_bars(dates), make_adj(dates)))
     pipeline.update_symbol("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
 
     failing_pipeline = make_pipeline(tmp_path, FakeSource(exc=RuntimeError("network down")))
@@ -202,6 +222,7 @@ def test_cache_hit_repairs_stale_qfq_limit_price_scale(tmp_path):
 
     assert diag.status == "cache_hit"
     assert diag.data_quality["status"] == "ok"
+    assert diag.quality_level == "pass"
     assert "qfq_price_scale_mismatch" not in diag.data_quality["warnings"]
     assert repaired.loc[0, "pre_close"] == 20.0
     assert repaired.loc[0, "limit_up"] == 22.0
@@ -209,7 +230,8 @@ def test_cache_hit_repairs_stale_qfq_limit_price_scale(tmp_path):
 
 
 def test_data_quality_allows_pre_listing_gap(tmp_path):
-    pipeline = make_pipeline(tmp_path, FakeSource(make_bars([date(2024, 1, 2), date(2024, 1, 3)])))
+    dates = [date(2024, 1, 2), date(2024, 1, 3)]
+    pipeline = make_pipeline(tmp_path, FakeSource(make_bars(dates), make_adj(dates)))
 
     diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 1))
 

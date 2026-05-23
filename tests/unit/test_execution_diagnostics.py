@@ -44,6 +44,8 @@ def test_execution_diagnostics_classifies_rejections():
     assert diagnostics["capacity_limited_count"] == 1
     assert diagnostics["capacity_rejected_count"] == 1
     assert diagnostics["avg_fill_ratio"] == 0.5
+    assert diagnostics["partial_fill_count"] == 1
+    assert diagnostics["filled_count"] == 1
     assert diagnostics["rejected_count"] == 5
     assert diagnostics["reject_categories"] == {
         "capacity": 1,

@@ -10,9 +10,10 @@ from __future__ import annotations
 import time
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date as _date
+from datetime import date as _date, datetime
 from typing import Any
 
+import pandas as pd
 from loguru import logger
 
 from cq.engine.backtest_engine import BacktestEngine
@@ -83,9 +84,13 @@ def _build_universe_diagnostics(
         "universe_name": universe_name,
         "source": source,
         "construction": construction,
+        "universe_type": "point_in_time" if construction == "point_in_time" else (
+            "static_builtin" if source == "builtin_preset" else "user_supplied"
+        ),
         "selection_time": "run_submit",
         "symbol_count": symbol_count,
         "survivorship_bias_risk": risk,
+        "point_in_time_available": construction == "point_in_time",
         "history_membership_available": False,
         "point_in_time": False,
         "warnings": warnings,
@@ -149,6 +154,8 @@ def _validate_trade_symbol_data(
             blocking.append(f"{symbol}: 无本地缓存")
         elif not quality.get("qfq_available", True):
             blocking.append(f"{symbol}: 缺少 qfq 复权数据")
+        elif not quality.get("factor_available", True):
+            blocking.append(f"{symbol}: 缺少复权因子数据")
         elif coverage_status == "start_missing":
             blocking.append(f"{symbol}: 数据未覆盖开始日 {start_date}")
         elif coverage_status == "end_missing":
@@ -161,12 +168,101 @@ def _validate_trade_symbol_data(
             blocking.append(f"{symbol}: qfq 缺少复权因子字段")
         elif "qfq_price_scale_mismatch" in warnings:
             blocking.append(f"{symbol}: qfq 涨跌停/昨收价格尺度异常")
+        elif "factor_missing" in warnings:
+            blocking.append(f"{symbol}: 缺少复权因子数据")
+        elif "duplicate_trade_date" in warnings:
+            blocking.append(f"{symbol}: 存在重复交易日")
+        elif "trade_date_not_sorted" in warnings:
+            blocking.append(f"{symbol}: 交易日顺序异常")
+        elif "invalid_open_price" in warnings:
+            blocking.append(f"{symbol}: 存在无效开盘价")
+        elif "limit_price_missing" in warnings:
+            blocking.append(f"{symbol}: 缺少涨跌停价字段")
 
     if blocking:
         detail = "；".join(blocking[:8])
         if len(blocking) > 8:
             detail += f"；等 {len(blocking)} 个问题"
         raise RuntimeError(f"交易标的数据质量校验失败：{detail}")
+
+
+def _fallback_data_diagnostic(
+    store: Any,
+    symbol: str,
+    role: str,
+    start: _date,
+    end: _date,
+    error: Exception,
+) -> dict[str, Any]:
+    """下载异常时基于本地缓存构造结构化诊断。"""
+    local_min, local_max = store.get_available_dates(symbol, adjust="raw")
+    qfq_min, qfq_max = store.get_available_dates(symbol, adjust="qfq")
+    try:
+        adj_df = store.read_adj_factors(symbol)
+    except Exception:
+        adj_df = None
+    factor_min = factor_max = None
+    if adj_df is not None and not adj_df.empty and "trade_date" in adj_df.columns:
+        dates = pd.to_datetime(adj_df["trade_date"]).dt.date  # type: ignore[name-defined]
+        factor_min = dates.min()
+        factor_max = dates.max()
+    coverage_status = (
+        "ok"
+        if local_min and local_max and local_min <= start and local_max >= end
+        else "start_missing" if local_min and local_min > start
+        else "end_missing" if local_max and local_max < end else "missing"
+    )
+    warnings = [] if coverage_status == "ok" and qfq_max else ["coverage_incomplete"]
+    if qfq_max is None:
+        warnings.append("qfq_missing")
+    quality_level = "pass" if not warnings else "failed"
+    try:
+        raw_path = store._bar_path(symbol, "raw")
+        cache_path = str(raw_path.parent) if raw_path.parent.exists() else None
+        updated_at = raw_path.stat().st_mtime if raw_path.exists() else None
+    except Exception:
+        cache_path = None
+        updated_at = None
+    return {
+        "symbol": symbol,
+        "role": role,
+        "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
+        "new_records": 0,
+        "used_cache": local_max is not None,
+        "local_first_date": str(local_min) if local_min else None,
+        "local_last_date": str(local_max) if local_max else None,
+        "requested_start": str(start),
+        "requested_end": str(end),
+        "error": str(error),
+        "source": None,
+        "cache_path": cache_path,
+        "cache_updated_at": datetime.fromtimestamp(updated_at).isoformat() if updated_at else None,  # type: ignore[name-defined]
+        "raw_first_date": str(local_min) if local_min else None,
+        "raw_last_date": str(local_max) if local_max else None,
+        "qfq_first_date": str(qfq_min) if qfq_min else None,
+        "qfq_last_date": str(qfq_max) if qfq_max else None,
+        "factor_first_date": str(factor_min) if factor_min else None,
+        "factor_last_date": str(factor_max) if factor_max else None,
+        "coverage_status": coverage_status,
+        "qfq_available": qfq_max is not None,
+        "factor_available": factor_max is not None,
+        "st_status_source": "unavailable",
+        "limit_price_source": "unknown",
+        "repair_actions": [],
+        "quality_level": quality_level,
+        "data_quality": {
+            "status": "ok" if quality_level == "pass" else "degraded",
+            "quality_level": quality_level,
+            "coverage_status": coverage_status,
+            "warnings": warnings,
+            "qfq_available": qfq_max is not None,
+            "factor_available": factor_max is not None,
+            "local_first_date": str(local_min) if local_min else None,
+            "local_last_date": str(local_max) if local_max else None,
+            "st_status_source": "unavailable",
+            "limit_price_source": "unknown",
+        },
+    }
 
 
 def _ensure_data(
@@ -227,36 +323,9 @@ def _ensure_data(
             diagnostic = pipeline.update_symbol_diagnostic(sym, end, start_date=start).to_dict()
         except Exception as e:
             logger.warning(f"数据下载失败 {sym}: {e}，将使用已有本地数据")
-            local_min, local_max = store.get_available_dates(sym, adjust="raw")
-            qfq_min, qfq_max = store.get_available_dates(sym, adjust="qfq")
-            coverage_status = (
-                "ok"
-                if local_min and local_max and local_min <= start and local_max >= end
-                else "start_missing" if local_min and local_min > start
-                else "end_missing" if local_max and local_max < end else "missing"
+            diagnostic = _fallback_data_diagnostic(
+                store, sym, "trade_symbol", start, end, e
             )
-            diagnostic = {
-                "symbol": sym,
-                "role": "trade_symbol",
-                "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
-                "new_records": 0,
-                "used_cache": local_max is not None,
-                "local_first_date": str(local_min) if local_min else None,
-                "local_last_date": str(local_max) if local_max else None,
-                "requested_start": start_date,
-                "requested_end": end_date,
-                "error": str(e),
-                "coverage_status": coverage_status,
-                "data_quality": {
-                    "status": "ok" if coverage_status == "ok" and qfq_max else "degraded",
-                    "coverage_status": coverage_status,
-                    "warnings": [] if coverage_status == "ok" and qfq_max else ["coverage_incomplete"],
-                    "qfq_available": qfq_max is not None,
-                    "factor_available": False,
-                    "local_first_date": str(local_min) if local_min else None,
-                    "local_last_date": str(local_max) if local_max else None,
-                },
-            }
         diagnostic["role"] = "trade_symbol"
         symbol_diagnostics.append(diagnostic)
 
@@ -275,36 +344,9 @@ def _ensure_data(
             ).to_dict()
         except Exception as e:
             logger.warning(f"基准数据下载失败 {benchmark}: {e}，将使用已有本地数据")
-            local_min, local_max = store.get_available_dates(benchmark, adjust="raw")
-            qfq_min, qfq_max = store.get_available_dates(benchmark, adjust="qfq")
-            coverage_status = (
-                "ok"
-                if local_min and local_max and local_min <= start and local_max >= end
-                else "start_missing" if local_min and local_min > start
-                else "end_missing" if local_max and local_max < end else "missing"
+            benchmark_diagnostic = _fallback_data_diagnostic(
+                store, benchmark, "benchmark", start, end, e
             )
-            benchmark_diagnostic = {
-                "symbol": benchmark,
-                "role": "benchmark",
-                "status": "download_failed_cache_available" if local_max else "download_failed_no_cache",
-                "new_records": 0,
-                "used_cache": local_max is not None,
-                "local_first_date": str(local_min) if local_min else None,
-                "local_last_date": str(local_max) if local_max else None,
-                "requested_start": start_date,
-                "requested_end": end_date,
-                "error": str(e),
-                "coverage_status": coverage_status,
-                "data_quality": {
-                    "status": "ok" if coverage_status == "ok" and qfq_max else "degraded",
-                    "coverage_status": coverage_status,
-                    "warnings": [] if coverage_status == "ok" and qfq_max else ["coverage_incomplete"],
-                    "qfq_available": qfq_max is not None,
-                    "factor_available": False,
-                    "local_first_date": str(local_min) if local_min else None,
-                    "local_last_date": str(local_max) if local_max else None,
-                },
-            }
         benchmark_diagnostic["role"] = "benchmark"
 
     return {
