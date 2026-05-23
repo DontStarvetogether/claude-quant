@@ -418,10 +418,7 @@ class BacktestEngine:
             for t in trades
             if getattr(t, "requested_quantity", None)
         ]
-        capacity_rejected = [
-            reason for _, reason in rejected
-            if "容量" in str(reason)
-        ]
+        partial_ratios = [ratio for ratio in ratios if ratio < 0.999999]
         reject_categories: dict[str, int] = {}
         reject_reasons: dict[str, int] = {}
         for _, reason in rejected:
@@ -437,14 +434,28 @@ class BacktestEngine:
                 key=lambda item: (-item[1], item[0]),
             )[:5]
         ]
+        order_count = len(trades) + len(rejected)
         return {
+            "order_count": order_count,
+            "filled_order_rate": round(len(trades) / order_count, 6) if order_count else 1.0,
             "capacity_limited_count": len(capacity_limited),
-            "capacity_rejected_count": len(capacity_rejected),
+            "capacity_limited_fills": len(capacity_limited),
+            "capacity_rejected_count": reject_categories.get("capacity", 0),
             "avg_fill_ratio": round(sum(ratios) / len(ratios), 6) if ratios else 1.0,
+            "partial_fill_ratio": round(sum(partial_ratios) / len(partial_ratios), 6)
+            if partial_ratios else 1.0,
             "rejected_count": len(rejected),
-            "partial_fill_count": sum(1 for ratio in ratios if ratio < 0.999999),
+            "partial_fill_count": len(partial_ratios),
             "filled_count": len(trades),
             "reject_categories": reject_categories,
+            "rejected_by_limit_up": reject_categories.get("limit_up", 0),
+            "rejected_by_limit_down": reject_categories.get("limit_down", 0),
+            "rejected_by_suspended": reject_categories.get("suspended", 0),
+            "rejected_by_cash": reject_categories.get("cash", 0),
+            "rejected_by_t1": reject_categories.get("t1", 0),
+            "rejected_by_position": reject_categories.get("position", 0),
+            "rejected_by_limit_order": reject_categories.get("limit_order", 0),
+            "rejected_by_missing_bar": reject_categories.get("missing_bar", 0),
             "top_reject_reasons": top_reject_reasons,
         }
 
@@ -504,10 +515,14 @@ class BacktestEngine:
             return "capacity"
         if "现金" in reason or "资金不足" in reason or "最低储备" in reason:
             return "cash"
-        if "T+1" in reason or "卖出数量为零" in reason or "无持仓" in reason:
+        if "T+1" in reason:
+            return "t1"
+        if "无持仓" in reason or "持仓不足" in reason or "卖出数量为零" in reason:
             return "position"
-        if "涨停" in reason or "跌停" in reason:
-            return "limit_price"
+        if "涨停" in reason:
+            return "limit_up"
+        if "跌停" in reason:
+            return "limit_down"
         if "限价" in reason:
             return "limit_order"
         if "停牌" in reason:

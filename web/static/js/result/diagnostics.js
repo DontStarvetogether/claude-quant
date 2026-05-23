@@ -321,7 +321,10 @@ function executionTrustText(exec) {
   const rejected = exec.rejected_count || 0;
   const limited = exec.capacity_limited_count || 0;
   if (!rejected && !limited) return '无拒单或容量缩量';
-  return `拒单 ${rejected}，容量缩量 ${limited}`;
+  const cash = exec.rejected_by_cash || 0;
+  const t1 = exec.rejected_by_t1 || 0;
+  if (!cash && !t1) return `拒单 ${rejected}，容量缩量 ${limited}`;
+  return `拒单 ${rejected}，容量缩量 ${limited}，现金 ${cash}，T+1 ${t1}`;
 }
 
 function metricTrustText(metric) {
@@ -343,6 +346,21 @@ function renderDiagnosticsDetail(data) {
     ['日内触达', assumptions.uses_intraday_touch ? '使用 high/low' : '未使用 high/low'],
     ['容量限制', assumptions.capacity_limit_enabled ? `启用，最大参与率 ${Fmt.pct(assumptions.max_volume_participation || 0, 1)}` : '未启用'],
   ];
+  const execRows = [
+    ['订单总数', `${exec.order_count ?? ((exec.filled_count || 0) + (exec.rejected_count || 0))}`],
+    ['成交订单率', Fmt.pct(exec.filled_order_rate ?? 1, 1)],
+    ['容量缩量', `${exec.capacity_limited_count || 0}`],
+    ['容量拒单', `${exec.capacity_rejected_count || 0}`],
+    ['部分成交', `${exec.partial_fill_count || 0}`],
+    ['部分成交比例', Fmt.pct(exec.partial_fill_ratio ?? exec.avg_fill_ratio ?? 1, 1)],
+    ['涨停拒单', exec.rejected_by_limit_up != null ? `${exec.rejected_by_limit_up}` : '—'],
+    ['跌停拒单', exec.rejected_by_limit_down != null ? `${exec.rejected_by_limit_down}` : '—'],
+    ['现金不足', exec.rejected_by_cash != null ? `${exec.rejected_by_cash}` : '—'],
+    ['T+1 限制', exec.rejected_by_t1 != null ? `${exec.rejected_by_t1}` : '—'],
+    ['持仓不足', exec.rejected_by_position != null ? `${exec.rejected_by_position}` : '—'],
+    ['停牌拒单', exec.rejected_by_suspended != null ? `${exec.rejected_by_suspended}` : '—'],
+    ['限价拒单', exec.rejected_by_limit_order != null ? `${exec.rejected_by_limit_order}` : '—'],
+  ];
   const metricWarnings = (metric.warnings || []).map(metricWarningText).join(' / ') || '无';
   const topReasons = (exec.top_reject_reasons || [])
     .map(item => `${item.reason} (${item.count})`)
@@ -353,6 +371,8 @@ function renderDiagnosticsDetail(data) {
         <div class="text-sm font-medium text-gray-300 mb-3">Execution</div>
         <div class="space-y-1 text-xs">
           ${assumptionRows.map(([k, v]) => `<div class="flex justify-between gap-3"><span class="text-gray-600">${escapeHtml(k)}</span><span class="text-gray-300 text-right">${escapeHtml(v)}</span></div>`).join('')}
+          <div class="border-t border-gray-800 my-2"></div>
+          ${execRows.map(([k, v]) => `<div class="flex justify-between gap-3"><span class="text-gray-600">${escapeHtml(k)}</span><span class="text-gray-300 text-right">${escapeHtml(v)}</span></div>`).join('')}
           <div class="flex justify-between gap-3"><span class="text-gray-600">主要拒单</span><span class="text-gray-300 text-right">${escapeHtml(topReasons)}</span></div>
         </div>
       </div>

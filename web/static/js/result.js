@@ -430,6 +430,17 @@ function benchmarkName(code) {
   return names[code] || code || '基准';
 }
 
+function hasDetailedRejectBreakdown(execDiag) {
+  return [
+    'rejected_by_limit_up',
+    'rejected_by_limit_down',
+    'rejected_by_cash',
+    'rejected_by_t1',
+    'rejected_by_position',
+    'rejected_by_suspended',
+  ].some(key => execDiag[key] != null);
+}
+
 function formatRejectSummary(execDiag) {
   const categories = execDiag.reject_categories || {};
   const entries = Object.entries(categories)
@@ -440,7 +451,10 @@ function formatRejectSummary(execDiag) {
   const labels = {
     capacity: '容量',
     cash: '现金',
-    position: '持仓/T+1',
+    t1: 'T+1',
+    position: '持仓不足',
+    limit_up: '涨停',
+    limit_down: '跌停',
     limit_price: '涨跌停',
     limit_order: '限价',
     suspended: '停牌',
@@ -462,6 +476,7 @@ function renderDetailMetrics(m, data = {}) {
   const execDiag = data.execution_diagnostics || {};
   const assumptions = data.execution_assumptions || {};
   const metricDiag = data.metric_diagnostics || {};
+  const detailedRejects = hasDetailedRejectBreakdown(execDiag);
   const rows = [
     ['总收益率', Fmt.pct(m.total_return), Fmt.colorClass(m.total_return)],
     ['年化收益率', Fmt.pct(m.annual_return), Fmt.colorClass(m.annual_return)],
@@ -494,16 +509,31 @@ function renderDetailMetrics(m, data = {}) {
     ['信号/成交时点', `${assumptions.signal_timing || 'D 日收盘后'} / ${assumptions.fill_timing || 'D+1 开盘'}`, ''],
     ['限价单语义', assumptions.uses_intraday_touch ? '使用日内 high/low 触达' : '仅按 D+1 开盘价判断', 'text-yellow-400'],
     ['引擎版本', data.engine_version || '—', ''],
+    ['订单总数', `${execDiag.order_count ?? ((execDiag.filled_count || 0) + (execDiag.rejected_count || 0))} 笔`, ''],
+    ['成交订单率', Fmt.pct(execDiag.filled_order_rate ?? 1, 1), ''],
     ['容量缩量成交', `${execDiag.capacity_limited_count || 0} 笔`, ''],
     ['容量拒单', `${execDiag.capacity_rejected_count || 0} 笔`, ''],
     ['部分成交', `${execDiag.partial_fill_count || 0} 笔`, ''],
     ['总拒单', `${execDiag.rejected_count ?? data.rejected_count ?? 0} 笔`, ''],
     ['主要拒单原因', formatRejectSummary(execDiag), ''],
     ['平均成交比例', Fmt.pct(execDiag.avg_fill_ratio ?? 1, 1), ''],
+    ['部分成交平均比例', Fmt.pct(execDiag.partial_fill_ratio ?? execDiag.avg_fill_ratio ?? 1, 1), ''],
     ['指标样本天数', `${metricDiag.sample_days ?? '—'} 天`, ''],
     ['胜率口径', metricDiag.win_rate_basis || 'completed_round_trips_fifo', ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
+
+  if (detailedRejects) {
+    rows.push(
+      ['涨停拒单', `${execDiag.rejected_by_limit_up || 0} 笔`, ''],
+      ['跌停拒单', `${execDiag.rejected_by_limit_down || 0} 笔`, ''],
+      ['现金不足拒单', `${execDiag.rejected_by_cash || 0} 笔`, ''],
+      ['T+1 拒单', `${execDiag.rejected_by_t1 || 0} 笔`, ''],
+      ['持仓不足拒单', `${execDiag.rejected_by_position || 0} 笔`, ''],
+      ['停牌拒单', `${execDiag.rejected_by_suspended || 0} 笔`, ''],
+      ['限价拒单', `${execDiag.rejected_by_limit_order || 0} 笔`, ''],
+    );
+  }
 
   if (data.benchmark) {
     const bmName = data.benchmark_name || benchmarkName(data.benchmark);
