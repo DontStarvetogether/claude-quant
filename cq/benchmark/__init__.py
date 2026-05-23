@@ -1,5 +1,13 @@
 """Benchmark strategies for reproducible research validation."""
 
+from cq.benchmark.cross_validation import (
+    CrossValidationExport,
+    CrossValidationResult,
+    CrossValidationTolerance,
+    compare_benchmark_with_external,
+    export_cross_validation_result,
+    generate_cross_validation_report,
+)
 from cq.benchmark.momentum_topn import (
     BenchmarkResult,
     MomentumTopNConfig,
@@ -19,9 +27,15 @@ __all__ = [
     "BenchmarkReport",
     "BenchmarkResult",
     "BenchmarkSummary",
+    "CrossValidationExport",
+    "CrossValidationResult",
+    "CrossValidationTolerance",
     "MomentumTopNConfig",
+    "compare_benchmark_with_external",
     "export_benchmark_result",
+    "export_cross_validation_result",
     "generate_benchmark_report",
+    "generate_cross_validation_report",
     "run_momentum_topn_benchmark",
     "summarize_benchmark_result",
 ]

@@ -21,7 +21,7 @@
 | Phase 3 因子研究模块 | 已完成初版 | 已新增 `cq/research`：Forward Return、Rank IC、因子分层、Top-Bottom、覆盖率、分组换手、Markdown 因子报告 |
 | Phase 4 标准 Benchmark 策略 | 已完成初版 | 已新增独立 `cq/benchmark`，支持 20日动量 TopN；输出信号、每日净值、持仓、成交，并支持 CSV/JSON/Markdown 标准导出与回测字段映射 |
 | Phase 5 股票池体系升级 | 进行中 | 已新增 `cq/universe`、`StaticUniverseProvider`、`LiquidUniverseProvider` 和 `StoreBackedLiquidUniverseProvider`；`ALL_A_LIQUID` 已可从 `ParquetStore` 本地 bars 动态筛选；PIT 成分股待做 |
-| Phase 6 平台交叉验证 | 未开始 | 需要先建立 benchmark 与导出格式 |
+| Phase 6 平台交叉验证 | 已完成初版 | 已新增 `cq/benchmark/cross_validation.py` 和 `docs/cross_validation_report.md`；可比较每日净值、持仓、成交并导出差异报告；真实外部平台样本对账待执行 |
 | Phase 7 模拟盘 / 实盘安全层 | 进行中 | 模拟盘已有会话持久化和历史查看；实盘安全层仍缺订单幂等、重启恢复、交易计划确认、日报/报警 |
 
 ## 下一步优化动作
@@ -31,7 +31,7 @@
 1. **Phase 4 继续：完善 Benchmark 结果消费链路**
    - `20日动量 TopN` 第一版已完成：调仓日收盘选股、下一交易日开盘成交
    - 已补齐 CSV/JSON/Markdown 导出、标准摘要和与现有回测结果页的字段映射
-   - 后续重点转向 benchmark 数据接入脚本，以及和聚宽/米筐/QMT 模拟盘交叉验证
+   - 已补交叉验证对账工具；后续重点转向真实外部平台样本导入和差异归因
 
 2. **Phase 5 补股票池抽象**
    - 第一版 `UniverseProvider` 已完成，静态预设已从 Web 层下沉到核心包
@@ -842,6 +842,37 @@ QMT 模拟盘
 停牌处理是否一致
 新股 / 退市 / ST 处理是否一致
 ```
+
+## 6.5 当前实现说明
+
+已新增 `cq/benchmark/cross_validation.py`：
+
+```text
+compare_benchmark_with_external()
+generate_cross_validation_report()
+export_cross_validation_result()
+CrossValidationTolerance
+```
+
+支持把本地 benchmark 输出和外部平台 DataFrame / CSV 规范化后比较：
+
+```text
+每日净值：date,total_assets,cash,position_value
+每日持仓：date,symbol,quantity,market_value
+每日成交：trade_date,symbol,side,quantity,price,amount,commission,stamp_tax,net_amount
+```
+
+输出：
+
+```text
+cross_validation_summary.json
+cross_validation_report.md
+equity_comparison.csv
+holdings_comparison.csv
+trades_comparison.csv
+```
+
+真实外部平台对账仍待执行，后续需要准备一组聚宽/米筐/QMT 的同策略导出样本。
 
 ---
 
