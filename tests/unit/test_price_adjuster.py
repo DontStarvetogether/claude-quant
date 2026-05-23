@@ -58,11 +58,21 @@ class TestPriceAdjuster:
         hist_close = qfq.loc[qfq["trade_date"] == date(2024, 1, 2), "close"].iloc[0]
         assert hist_close == pytest.approx(5.0, abs=0.01)
 
-    def test_qfq_removes_pre_close(self):
-        """前复权后应移除 pre_close 列。"""
+    def test_qfq_adjusts_pre_close_to_same_scale(self):
+        """前复权后 pre_close 应与 OHLC 保持同一价格尺度。"""
         adjuster = PriceAdjuster()
         qfq = adjuster.apply_qfq(make_raw_df(), make_adj_df())
-        assert "pre_close" not in qfq.columns
+        hist_pre_close = qfq.loc[qfq["trade_date"] == date(2024, 1, 2), "pre_close"].iloc[0]
+        assert hist_pre_close == pytest.approx(5.0, abs=0.01)
+
+    def test_qfq_adjusts_limit_prices_to_same_scale(self):
+        """涨跌停价也必须随 qfq 同尺度调整，否则撮合会错把复权价和原始价比较。"""
+        adjuster = PriceAdjuster()
+        qfq = adjuster.apply_qfq(make_raw_df(), make_adj_df())
+
+        hist = qfq[qfq["trade_date"] == date(2024, 1, 2)].iloc[0]
+        assert hist["limit_up"] == pytest.approx(5.5, abs=0.01)
+        assert hist["limit_down"] == pytest.approx(4.5, abs=0.01)
 
     def test_qfq_preserves_volume(self):
         """成交量不受复权影响。"""

@@ -105,6 +105,10 @@ def _validate_trade_symbol_data(
             blocking.append(f"{symbol}: 数据覆盖缺失")
         elif "qfq_missing" in warnings:
             blocking.append(f"{symbol}: 缺少 qfq 复权数据")
+        elif "qfq_adjust_factor_missing" in warnings:
+            blocking.append(f"{symbol}: qfq 缺少复权因子字段")
+        elif "qfq_price_scale_mismatch" in warnings:
+            blocking.append(f"{symbol}: qfq 涨跌停/昨收价格尺度异常")
 
     if blocking:
         detail = "；".join(blocking[:8])

@@ -12,7 +12,11 @@ def make_diag(
     coverage_status: str = "ok",
     qfq_available: bool = True,
     used_cache: bool = True,
+    warnings: list[str] | None = None,
 ) -> dict:
+    quality_warnings = [] if qfq_available else ["qfq_missing"]
+    if warnings is not None:
+        quality_warnings = warnings
     return {
         "symbol": "600519.SH",
         "status": status,
@@ -20,7 +24,7 @@ def make_diag(
         "data_quality": {
             "coverage_status": coverage_status,
             "qfq_available": qfq_available,
-            "warnings": [] if qfq_available else ["qfq_missing"],
+            "warnings": quality_warnings,
         },
     }
 
@@ -41,6 +45,8 @@ def test_validate_trade_symbol_data_passes_ok_data():
         make_diag(coverage_status="start_missing"),
         make_diag(coverage_status="end_missing"),
         make_diag(qfq_available=False),
+        make_diag(warnings=["qfq_adjust_factor_missing"]),
+        make_diag(warnings=["qfq_price_scale_mismatch"]),
     ],
 )
 def test_validate_trade_symbol_data_blocks_bad_trade_data(diagnostic):

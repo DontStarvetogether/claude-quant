@@ -2,7 +2,7 @@
 前复权计算。
 
 前复权原理：以今日为基准，历史价格 × (今日adj_factor / 当日adj_factor)。
-保证今日价格不变，历史除权日之前的价格向上调整，消除价格跳跃。
+保证今日价格不变，历史除权日之前的价格调整到同一价格尺度，消除价格跳跃。
 """
 
 from __future__ import annotations
@@ -26,16 +26,15 @@ class PriceAdjuster:
         adj_df：复权因子数据（含 trade_date, adj_factor 列）
 
         返回前复权 DataFrame：
-        - 价格列（open/high/low/close）已乘以复权系数
+        - 价格列（open/high/low/close/pre_close/limit_up/limit_down）已乘以复权系数
         - 新增 adj_factor 列（相对今日的复权系数）
-        - 移除 pre_close 列（前复权后 pre_close 无实际意义）
-        - 保留 limit_up / limit_down（使用原始价，不复权）
+        - pre_close / limit_up / limit_down 保持与 OHLC 相同的价格尺度，供撮合比较
         """
         if adj_df.empty:
             # 无复权因子时，按 1.0 处理（不复权）
             df = raw_df.copy()
             df["adj_factor"] = 1.0
-            return df.drop(columns=["pre_close"], errors="ignore")
+            return df
 
         merged = raw_df.merge(adj_df[["trade_date", "adj_factor"]], on="trade_date", how="left")
 
@@ -51,16 +50,25 @@ class PriceAdjuster:
         # 今日（最新日期）的复权因子作为基准
         latest_factor = adj_df["adj_factor"].iloc[-1]
 
-        price_cols = ["open", "high", "low", "close"]
+        price_cols = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "pre_close",
+            "limit_up",
+            "limit_down",
+        ]
         for col in price_cols:
-            merged[col] = (
-                merged[col] * latest_factor / merged["adj_factor"]
-            ).round(3)
+            if col in merged.columns:
+                merged[col] = (
+                    merged[col] * latest_factor / merged["adj_factor"]
+                ).round(3)
 
         # adj_factor 列存储相对今日的复权系数（供后续重算使用）
         merged["adj_factor"] = (latest_factor / merged["adj_factor"]).round(6)
 
-        return merged.drop(columns=["pre_close"], errors="ignore")
+        return merged
 
     def detect_split_dates(self, adj_df: pd.DataFrame) -> list[date]:
         """

@@ -275,8 +275,9 @@ class HistoricalFeed:
             return df
 
         df = df.copy()
-        for col in ["open", "high", "low", "close"]:
-            df[col] = (df[col] * ratio).round(3)
+        for col in ["open", "high", "low", "close", "pre_close", "limit_up", "limit_down"]:
+            if col in df.columns:
+                df[col] = (df[col] * ratio).round(3)
         return df
 
     @staticmethod

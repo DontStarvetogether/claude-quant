@@ -170,8 +170,42 @@ def test_tail_update_recalculates_qfq_when_adj_factor_changes(tmp_path):
 
     assert qfq_after["close"].tolist() == [20.0, 20.0]
     assert qfq_after["adj_factor"].tolist() == [2.0, 1.0]
+    assert qfq_after.loc[0, "pre_close"] == 20.0
+    assert qfq_after.loc[0, "limit_up"] == 22.0
+    assert qfq_after.loc[0, "limit_down"] == 18.0
     diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
     assert diag.data_quality["status"] == "ok"
+
+
+def test_cache_hit_repairs_stale_qfq_limit_price_scale(tmp_path):
+    store = ParquetStore(tmp_path)
+    calendar = TradingCalendar([date(2024, 1, 2), date(2024, 1, 3)])
+    bars = make_bars([date(2024, 1, 2), date(2024, 1, 3)])
+    bars.loc[bars["trade_date"] == date(2024, 1, 2), ["open", "high", "low", "close"]] = 10.0
+    bars.loc[bars["trade_date"] == date(2024, 1, 3), ["open", "high", "low", "close"]] = 20.0
+    adj = pd.DataFrame({
+        "trade_date": [date(2024, 1, 2), date(2024, 1, 3)],
+        "adj_factor": [1.0, 2.0],
+    })
+
+    pipeline = DataPipeline(FakeSource(bars, adj), store, calendar)
+    pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
+
+    stale_qfq = store.read_daily_bars("600519.SH", adjust="qfq")
+    stale_qfq.loc[0, "pre_close"] = 10.0
+    stale_qfq.loc[0, "limit_up"] = 11.0
+    stale_qfq.loc[0, "limit_down"] = 9.0
+    store.write_daily_bars("600519.SH", stale_qfq, adjust="qfq", mode="overwrite")
+
+    diag = pipeline.update_symbol_diagnostic("600519.SH", date(2024, 1, 3), start_date=date(2024, 1, 2))
+    repaired = store.read_daily_bars("600519.SH", adjust="qfq")
+
+    assert diag.status == "cache_hit"
+    assert diag.data_quality["status"] == "ok"
+    assert "qfq_price_scale_mismatch" not in diag.data_quality["warnings"]
+    assert repaired.loc[0, "pre_close"] == 20.0
+    assert repaired.loc[0, "limit_up"] == 22.0
+    assert repaired.loc[0, "limit_down"] == 18.0
 
 
 def test_data_quality_allows_pre_listing_gap(tmp_path):

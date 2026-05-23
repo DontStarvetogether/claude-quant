@@ -191,6 +191,13 @@ class DataPipeline:
         data_quality = self._inspect_local_data_quality(
             symbol, requested_start, end_date, list_date=list_date
         )
+        qfq_repair_warnings = {"qfq_adjust_factor_missing", "qfq_price_scale_mismatch"}
+        if qfq_repair_warnings.intersection(data_quality.get("warnings") or []):
+            logger.warning(f"{symbol} qfq 缓存结构或价格尺度不一致，自动重算 qfq 缓存")
+            self._recalculate_qfq(symbol)
+            data_quality = self._inspect_local_data_quality(
+                symbol, requested_start, end_date, list_date=list_date
+            )
         return SymbolUpdateDiagnostic(
             symbol=symbol,
             status=status,
@@ -406,8 +413,9 @@ class DataPipeline:
             return
 
         qfq_df = self._adjuster.apply_qfq(raw_df, adj_df)
-        # qfq 需要保留 limit_up/limit_down（使用原始价）
-        for col in ["limit_up", "limit_down", "is_st", "is_suspended"]:
+        # qfq 的涨跌停价和昨收必须与 OHLC 使用同一复权尺度，撮合时才能同口径比较。
+        # 非价格状态字段仍沿用 raw。
+        for col in ["is_st", "is_suspended"]:
             if col in raw_df.columns:
                 qfq_df[col] = raw_df[col].values
 
@@ -422,7 +430,7 @@ class DataPipeline:
     ) -> None:
         """无除权时，只将新数据追加到 qfq（adj_factor = 1.0）。"""
         new_qfq = self._adjuster.apply_qfq(new_raw_df, adj_df)
-        for col in ["limit_up", "limit_down", "is_st", "is_suspended"]:
+        for col in ["is_st", "is_suspended"]:
             if col in new_raw_df.columns:
                 new_qfq[col] = new_raw_df[col].values
         self._store.write_daily_bars(symbol, new_qfq, adjust="qfq", mode="append")
@@ -479,6 +487,10 @@ class DataPipeline:
             warnings.append("duplicate_trade_date")
         if qfq_df.empty:
             warnings.append("qfq_missing")
+        elif "adj_factor" not in qfq_df.columns:
+            warnings.append("qfq_adjust_factor_missing")
+        elif self._qfq_price_scale_mismatch(raw_df, qfq_df):
+            warnings.append("qfq_price_scale_mismatch")
 
         adj_df = self._store.read_adj_factors(symbol)
         hard_warnings = [w for w in warnings if w != "pre_listing_gap"]
@@ -493,3 +505,41 @@ class DataPipeline:
             "local_first_date": str(local_first),
             "local_last_date": str(local_last),
         }
+
+    @staticmethod
+    def _qfq_price_scale_mismatch(raw_df: pd.DataFrame, qfq_df: pd.DataFrame) -> bool:
+        """检测 qfq 的昨收/涨跌停价是否仍停留在原始价尺度。"""
+        compare_cols = ["pre_close", "limit_up", "limit_down"]
+        if "adj_factor" not in qfq_df.columns:
+            return True
+        required_cols = ["trade_date", "adj_factor", *compare_cols]
+        if any(col not in raw_df.columns for col in ["trade_date", *compare_cols]):
+            return False
+        if any(col not in qfq_df.columns for col in required_cols):
+            return True
+
+        merged = raw_df[["trade_date", *compare_cols]].merge(
+            qfq_df[required_cols],
+            on="trade_date",
+            how="inner",
+            suffixes=("_raw", "_qfq"),
+        )
+        if merged.empty:
+            return False
+
+        factors = pd.to_numeric(merged["adj_factor"], errors="coerce").fillna(1.0)
+        adjusted_rows = (factors - 1.0).abs() > 1e-6
+        if not adjusted_rows.any():
+            return False
+
+        checked = merged.loc[adjusted_rows].copy()
+        factors = factors.loc[adjusted_rows]
+        for col in compare_cols:
+            raw_values = pd.to_numeric(checked[f"{col}_raw"], errors="coerce")
+            qfq_values = pd.to_numeric(checked[f"{col}_qfq"], errors="coerce")
+            expected = (raw_values * factors).round(3)
+            delta = (qfq_values - expected).abs()
+            tolerance = expected.abs().mul(1e-4).clip(lower=0.02)
+            if ((raw_values.notna()) & (qfq_values.notna()) & (delta > tolerance)).any():
+                return True
+        return False

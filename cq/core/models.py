@@ -39,7 +39,7 @@ class OrderStatus(str, Enum):
 
 @dataclass(frozen=True)
 class Bar:
-    """单根 K 线。所有价格均为前复权价格（qfq），除 limit_up/limit_down 使用原始价。"""
+    """单根 K 线。所有价格字段必须处在同一价格尺度（默认 qfq，dynamic 模式为原始价）。"""
 
     symbol: str          # "600519.SH" 格式
     trade_date: date
@@ -51,11 +51,11 @@ class Bar:
     volume: int          # 股数
     amount: float        # 成交额（元）
 
-    # 涨跌停价（用原始价格计算，不受复权影响）
+    # 涨跌停价（与 open/high/low/close 保持同一价格尺度）
     limit_up: float
     limit_down: float
 
-    pre_close: float     # 前收盘价（原始，用于涨跌停判断）
+    pre_close: float     # 前收盘价（与 OHLC 保持同一价格尺度）
     is_st: bool = False
     is_suspended: bool = False
 
