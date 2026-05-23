@@ -6,7 +6,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from cq.core.models import OrderSide, Trade
+from cq.core.models import AccountSnapshot, OrderSide, PositionSnapshot, Trade
 from cq.performance.metrics import MetricsResult, PerformanceMetrics
 
 
@@ -132,3 +132,116 @@ def test_compute_exposes_turnover_and_cost_drag():
     assert result.total_fees == pytest.approx(15.5)
     assert result.cost_drag == pytest.approx(15.5 / 100_000, abs=1e-6)
     assert result.gross_return > result.net_return
+
+
+def test_compute_exposes_portfolio_exposure_metrics():
+    equity = pd.Series(
+        [100_000.0, 105_000.0, 110_000.0],
+        index=[date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)],
+    )
+    account_history = {
+        date(2024, 1, 2): AccountSnapshot(
+            cash=40_000.0,
+            positions={
+                "AAA": PositionSnapshot(
+                    symbol="AAA",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=200.0,
+                    last_price=200.0,
+                    market_value=20_000.0,
+                    unrealized_pnl=0.0,
+                ),
+                "BBB": PositionSnapshot(
+                    symbol="BBB",
+                    total_qty=200,
+                    tradeable_qty=200,
+                    avg_cost=200.0,
+                    last_price=200.0,
+                    market_value=40_000.0,
+                    unrealized_pnl=0.0,
+                ),
+            },
+            total_assets=100_000.0,
+            total_market_value=60_000.0,
+        ),
+        date(2024, 1, 3): AccountSnapshot(
+            cash=20_000.0,
+            positions={
+                "AAA": PositionSnapshot(
+                    symbol="AAA",
+                    total_qty=150,
+                    tradeable_qty=150,
+                    avg_cost=200.0,
+                    last_price=200.0,
+                    market_value=30_000.0,
+                    unrealized_pnl=0.0,
+                ),
+                "BBB": PositionSnapshot(
+                    symbol="BBB",
+                    total_qty=150,
+                    tradeable_qty=150,
+                    avg_cost=233.33,
+                    last_price=233.33,
+                    market_value=35_000.0,
+                    unrealized_pnl=0.0,
+                ),
+                "CCC": PositionSnapshot(
+                    symbol="CCC",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=200.0,
+                    last_price=200.0,
+                    market_value=20_000.0,
+                    unrealized_pnl=0.0,
+                ),
+            },
+            total_assets=105_000.0,
+            total_market_value=85_000.0,
+        ),
+        date(2024, 1, 4): AccountSnapshot(
+            cash=55_000.0,
+            positions={
+                "AAA": PositionSnapshot(
+                    symbol="AAA",
+                    total_qty=100,
+                    tradeable_qty=100,
+                    avg_cost=200.0,
+                    last_price=250.0,
+                    market_value=25_000.0,
+                    unrealized_pnl=5_000.0,
+                ),
+                "BBB": PositionSnapshot(
+                    symbol="BBB",
+                    total_qty=120,
+                    tradeable_qty=120,
+                    avg_cost=250.0,
+                    last_price=250.0,
+                    market_value=30_000.0,
+                    unrealized_pnl=0.0,
+                ),
+            },
+            total_assets=110_000.0,
+            total_market_value=55_000.0,
+        ),
+    }
+
+    result = PerformanceMetrics().compute(
+        equity,
+        trades=[],
+        account_history=account_history,
+    )
+
+    assert result.avg_position_count == pytest.approx((2 + 3 + 2) / 3, abs=1e-6)
+    assert result.max_position_count == 3
+    assert result.min_position_count == 2
+    assert result.avg_cash_ratio == pytest.approx(
+        (0.4 + (20_000 / 105_000) + 0.5) / 3,
+        abs=1e-6,
+    )
+    assert result.average_exposure == pytest.approx(
+        ((60_000 / 100_000) + (85_000 / 105_000) + (55_000 / 110_000)) / 3,
+        abs=1e-6,
+    )
+    assert result.max_single_position_weight == pytest.approx(40_000 / 100_000, abs=1e-6)
+    assert result.avg_top5_concentration == pytest.approx(result.average_exposure, abs=1e-6)

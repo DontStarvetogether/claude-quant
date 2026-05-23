@@ -25,6 +25,13 @@ def _metrics() -> MetricsResult:
         avg_loss=0.0,
         profit_factor=float("inf"),
         avg_hold_days=0.0,
+        avg_position_count=2.5,
+        max_position_count=4,
+        min_position_count=1,
+        avg_cash_ratio=0.22,
+        average_exposure=0.78,
+        max_single_position_weight=0.31,
+        avg_top5_concentration=0.63,
         total_fees=0.0,
         final_value=1010000.0,
         initial_value=1000000.0,
@@ -318,3 +325,5 @@ def test_serialize_result_exposes_execution_and_metric_diagnostics():
     assert payload.execution_diagnostics["partial_fill_count"] == 0
     assert payload.metric_diagnostics is not None
     assert payload.metric_diagnostics["win_rate_basis"] == "completed_round_trips_fifo"
+    assert payload.metrics.avg_cash_ratio == 0.22
+    assert payload.metrics.max_single_position_weight == 0.31

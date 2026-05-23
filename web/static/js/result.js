@@ -240,6 +240,10 @@ function assessBacktest(m, symbols, startDate, endDate) {
   const initial = finite(m.initial_value) || 1;
   const fees = finite(m.total_fees);
   const feeDrag = fees / initial;
+  const avgCashRatio = finite(m.avg_cash_ratio);
+  const avgPositionCount = finite(m.avg_position_count);
+  const maxSingleWeight = finite(m.max_single_position_weight);
+  const avgTop5Concentration = finite(m.avg_top5_concentration);
 
   let score = 50;
   score += clamp(annual * 220, -25, 25);
@@ -254,6 +258,8 @@ function assessBacktest(m, symbols, startDate, endDate) {
   if (years < 2) score -= 10;
   if (symbolCount < 20) score -= 6;
   if (feeDrag > 0.03) score -= 6;
+  if (avgCashRatio > 0.45) score -= 6;
+  if (maxSingleWeight > 0.35) score -= 8;
   score = Math.round(clamp(score, 0, 100));
 
   const notes = [];
@@ -282,6 +288,17 @@ function assessBacktest(m, symbols, startDate, endDate) {
     notes.push(`手续费占初始资金 ${Fmt.pct(feeDrag)}，换手成本需要关注`);
     actions.push('检查调仓频率和单笔交易门槛');
   }
+  if (avgCashRatio > 0.45) {
+    notes.push(`平均现金占比 ${Fmt.pct(avgCashRatio)}，资金利用率偏低`);
+    actions.push('检查入场条件是否过严，或是否长期处于低仓位');
+  }
+  if (maxSingleWeight > 0.35) {
+    notes.push(`最大单票权重达到 ${Fmt.pct(maxSingleWeight)}，组合集中度偏高`);
+    actions.push('复查单票仓位上限和分散持仓规则');
+  }
+  if (avgPositionCount > 0 && avgPositionCount < 3 && symbolCount >= 10) {
+    notes.push(`平均持仓数 ${avgPositionCount.toFixed(1)}，分散度偏低`);
+  }
 
   const rating = score >= 75 ? '可进入样本外验证' : score >= 60 ? '有继续优化价值' : score >= 45 ? '仅适合研究观察' : '暂不适合实盘参考';
   const scoreClass = score >= 75 ? 'text-red-400' : score >= 60 ? 'text-yellow-300' : score >= 45 ? 'text-gray-300' : 'text-green-400';
@@ -299,6 +316,10 @@ function assessBacktest(m, symbols, startDate, endDate) {
       { label: '最大回撤', value: Fmt.pct(-drawdown), cls: drawdown <= 0.15 ? 'text-red-400' : drawdown <= 0.25 ? 'text-yellow-300' : 'text-green-400' },
       { label: '交易样本', value: `${trades} 笔`, cls: trades >= 30 ? 'text-red-400' : trades >= 8 ? 'text-gray-200' : 'text-yellow-300' },
       { label: '费用拖累', value: Fmt.pct(feeDrag), cls: feeDrag <= 0.015 ? 'text-gray-200' : 'text-yellow-300' },
+      { label: '平均现金', value: Fmt.pct(avgCashRatio), cls: avgCashRatio <= 0.2 ? 'text-red-400' : avgCashRatio <= 0.45 ? 'text-gray-200' : 'text-yellow-300' },
+      { label: '最大单票', value: Fmt.pct(maxSingleWeight), cls: maxSingleWeight <= 0.2 ? 'text-red-400' : maxSingleWeight <= 0.35 ? 'text-gray-200' : 'text-yellow-300' },
+      { label: '平均持仓数', value: avgPositionCount ? avgPositionCount.toFixed(1) : '0.0', cls: avgPositionCount >= 8 ? 'text-red-400' : avgPositionCount >= 3 ? 'text-gray-200' : 'text-yellow-300' },
+      { label: 'Top5 集中度', value: Fmt.pct(avgTop5Concentration), cls: avgTop5Concentration <= 0.45 ? 'text-red-400' : avgTop5Concentration <= 0.7 ? 'text-gray-200' : 'text-yellow-300' },
     ],
   };
 }
@@ -503,6 +524,12 @@ function renderDetailMetrics(m, data = {}) {
     ['最大日换手率', Fmt.pct(m.max_daily_turnover || 0, 2), ''],
     ['买入换手', Fmt.pct(m.buy_turnover || 0, 2), ''],
     ['卖出换手', Fmt.pct(m.sell_turnover || 0, 2), ''],
+    ['平均持仓数量', Fmt.num(m.avg_position_count || 0, 2), ''],
+    ['最大/最小持仓数', `${m.max_position_count || 0} / ${m.min_position_count || 0}`, ''],
+    ['平均现金占比', Fmt.pct(m.avg_cash_ratio || 0, 1), (m.avg_cash_ratio || 0) > 0.45 ? 'text-yellow-400' : ''],
+    ['平均仓位暴露', Fmt.pct(m.average_exposure || 0, 1), ''],
+    ['最大单票权重', Fmt.pct(m.max_single_position_weight || 0, 1), (m.max_single_position_weight || 0) > 0.35 ? 'text-yellow-400' : ''],
+    ['Top5 平均集中度', Fmt.pct(m.avg_top5_concentration || 0, 1), ''],
     ['成本/平均净值', Fmt.pct(m.cost_to_nav || 0, 2), ''],
     ['滑点成本估算', Fmt.money(m.total_slippage_cost || 0), ''],
     ['撮合模型', data.execution_model || 'next_open', ''],

@@ -385,6 +385,10 @@ function renderDiagnosticsDetail(data) {
           <div class="flex justify-between gap-3"><span class="text-gray-600">年化天数</span><span class="text-gray-300">${metric.annualization_trading_days || 252}</span></div>
           <div class="flex justify-between gap-3"><span class="text-gray-600">年化换手</span><span class="text-gray-300">${Fmt.pct(metric.annual_turnover || 0, 1)}</span></div>
           <div class="flex justify-between gap-3"><span class="text-gray-600">成本拖累</span><span class="text-gray-300">${Fmt.pct(metric.cost_drag || 0, 2)}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">平均持仓数</span><span class="text-gray-300">${Fmt.num(metric.avg_position_count || 0, 2)}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">平均现金占比</span><span class="text-gray-300">${Fmt.pct(metric.avg_cash_ratio || 0, 1)}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">最大单票权重</span><span class="text-gray-300">${Fmt.pct(metric.max_single_position_weight || 0, 1)}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-gray-600">Top5 集中度</span><span class="text-gray-300">${Fmt.pct(metric.avg_top5_concentration || 0, 1)}</span></div>
           <div class="pt-1 text-yellow-300">${escapeHtml(metricWarnings)}</div>
         </div>
       </div>
@@ -405,6 +409,8 @@ function metricWarningText(value) {
     benchmark_unavailable: '基准不可用',
     annual_turnover_high: '年化换手偏高',
     cost_drag_high: '成本拖累偏高',
+    cash_ratio_high: '平均现金占比偏高',
+    concentration_high: '组合集中度偏高',
     data_quality_failed: '数据质量失败',
     data_quality_warning: '数据质量警告',
     orders_rejected: '存在拒单',

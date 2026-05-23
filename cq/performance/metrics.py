@@ -15,7 +15,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from cq.core.models import OrderSide, Trade
+from cq.core.models import AccountSnapshot, OrderSide, Trade
 
 
 @dataclass
@@ -81,6 +81,13 @@ class MetricsResult:
     total_slippage_cost: float = 0.0
     cost_drag: float = 0.0
     cost_to_nav: float = 0.0
+    avg_position_count: float = 0.0
+    max_position_count: int = 0
+    min_position_count: int = 0
+    avg_cash_ratio: float = 0.0
+    average_exposure: float = 0.0
+    max_single_position_weight: float = 0.0
+    avg_top5_concentration: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -109,6 +116,13 @@ class MetricsResult:
             "total_slippage_cost": self.total_slippage_cost,
             "cost_drag": self.cost_drag,
             "cost_to_nav": self.cost_to_nav,
+            "avg_position_count": self.avg_position_count,
+            "max_position_count": self.max_position_count,
+            "min_position_count": self.min_position_count,
+            "avg_cash_ratio": self.avg_cash_ratio,
+            "average_exposure": self.average_exposure,
+            "max_single_position_weight": self.max_single_position_weight,
+            "avg_top5_concentration": self.avg_top5_concentration,
             "win_rate": self.win_rate,
             "avg_profit": self.avg_profit,
             "avg_loss": self.avg_loss,
@@ -165,6 +179,7 @@ class PerformanceMetrics:
         self,
         equity_curve: pd.Series,
         trades: list[Trade],
+        account_history: dict[date, AccountSnapshot] | None = None,
     ) -> MetricsResult:
         """
         计算完整绩效指标。
@@ -224,6 +239,7 @@ class PerformanceMetrics:
         total_fees = sum(t.commission + t.stamp_tax for t in trades)
         avg_assets = float(equity_curve.mean()) if len(equity_curve) else float(initial)
         turnover_stats = self._turnover_stats(equity_curve, trades, avg_assets)
+        exposure_stats = self._exposure_stats(account_history)
         cost_drag = total_fees / initial if initial > 0 else 0.0
         gross_return = total_return + cost_drag
         gross_annual_return = (
@@ -258,6 +274,13 @@ class PerformanceMetrics:
             total_slippage_cost=0.0,
             cost_drag=round(cost_drag, 6),
             cost_to_nav=round(total_fees / avg_assets, 6) if avg_assets > 0 else 0.0,
+            avg_position_count=round(exposure_stats["avg_position_count"], 6),
+            max_position_count=int(exposure_stats["max_position_count"]),
+            min_position_count=int(exposure_stats["min_position_count"]),
+            avg_cash_ratio=round(exposure_stats["avg_cash_ratio"], 6),
+            average_exposure=round(exposure_stats["average_exposure"], 6),
+            max_single_position_weight=round(exposure_stats["max_single_position_weight"], 6),
+            avg_top5_concentration=round(exposure_stats["avg_top5_concentration"], 6),
             win_rate=round(trade_stats["win_rate"], 4),
             avg_profit=round(trade_stats["avg_profit"], 6),
             avg_loss=round(trade_stats["avg_loss"], 6),
@@ -312,6 +335,66 @@ class PerformanceMetrics:
             "buy_turnover": buy_amount / avg_assets if avg_assets > 0 else 0.0,
             "sell_turnover": sell_amount / avg_assets if avg_assets > 0 else 0.0,
             "total_turnover": sum(daily_turnovers),
+        }
+
+    @staticmethod
+    def _exposure_stats(
+        account_history: dict[date, AccountSnapshot] | None,
+    ) -> dict[str, float]:
+        """根据每日 EOD 账户快照计算组合暴露指标。"""
+        if not account_history:
+            return {
+                "avg_position_count": 0.0,
+                "max_position_count": 0.0,
+                "min_position_count": 0.0,
+                "avg_cash_ratio": 0.0,
+                "average_exposure": 0.0,
+                "max_single_position_weight": 0.0,
+                "avg_top5_concentration": 0.0,
+            }
+
+        snapshots = [snap for _, snap in sorted(account_history.items(), key=lambda item: item[0])]
+        position_counts: list[int] = []
+        cash_ratios: list[float] = []
+        exposure_ratios: list[float] = []
+        top5_concentrations: list[float] = []
+        max_single_position_weight = 0.0
+
+        for snapshot in snapshots:
+            total_assets = float(snapshot.total_assets)
+            position_values = sorted(
+                [
+                    float(pos.market_value)
+                    for pos in snapshot.positions.values()
+                    if pos.total_qty > 0 and pos.market_value > 0
+                ],
+                reverse=True,
+            )
+            position_counts.append(len(position_values))
+
+            if total_assets > 0:
+                cash_ratio = float(snapshot.cash) / total_assets
+                weights = [value / total_assets for value in position_values]
+                cash_ratios.append(cash_ratio)
+                exposure_ratios.append(sum(weights))
+                top5_concentrations.append(sum(weights[:5]))
+                if weights:
+                    max_single_position_weight = max(max_single_position_weight, max(weights))
+            else:
+                cash_ratios.append(0.0)
+                exposure_ratios.append(0.0)
+                top5_concentrations.append(0.0)
+
+        return {
+            "avg_position_count": float(np.mean(position_counts)) if position_counts else 0.0,
+            "max_position_count": float(max(position_counts)) if position_counts else 0.0,
+            "min_position_count": float(min(position_counts)) if position_counts else 0.0,
+            "avg_cash_ratio": float(np.mean(cash_ratios)) if cash_ratios else 0.0,
+            "average_exposure": float(np.mean(exposure_ratios)) if exposure_ratios else 0.0,
+            "max_single_position_weight": float(max_single_position_weight),
+            "avg_top5_concentration": (
+                float(np.mean(top5_concentrations)) if top5_concentrations else 0.0
+            ),
         }
 
     @staticmethod
@@ -479,6 +562,9 @@ class PerformanceMetrics:
             gross_return=0.0, net_return=0.0,
             gross_annual_return=0.0, net_annual_return=0.0,
             total_slippage_cost=0.0, cost_drag=0.0, cost_to_nav=0.0,
+            avg_position_count=0.0, max_position_count=0, min_position_count=0,
+            avg_cash_ratio=0.0, average_exposure=0.0,
+            max_single_position_weight=0.0, avg_top5_concentration=0.0,
             win_rate=0.0, avg_profit=0.0, avg_loss=0.0,
             profit_factor=0.0, avg_hold_days=0.0,
             total_fees=0.0, final_value=initial, initial_value=initial,

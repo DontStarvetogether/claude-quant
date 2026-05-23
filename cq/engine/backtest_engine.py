@@ -175,6 +175,7 @@ class BacktestEngine:
 
         # 主循环
         equity_curve: dict[date, float] = {}
+        account_history: dict[date, Any] = {}
         all_trades: list[Trade] = []
         rejected: list[tuple] = []
 
@@ -223,6 +224,7 @@ class BacktestEngine:
 
             # 步骤 7：记录权益快照
             equity_curve[trade_date] = portfolio.get_total_assets()
+            account_history[trade_date] = portfolio.snapshot()
 
             if (i + 1) % 20 == 0 or (i + 1) == len(trade_dates):
                 logger.debug(
@@ -240,7 +242,7 @@ class BacktestEngine:
         # 计算指标
         equity_series = pd.Series(equity_curve)
         perf = PerformanceMetrics()
-        metrics = perf.compute(equity_series, all_trades)
+        metrics = perf.compute(equity_series, all_trades, account_history=account_history)
 
         # 基准对比
         benchmark_curve: pd.Series | None = None
@@ -484,6 +486,10 @@ class BacktestEngine:
             warnings.append("annual_turnover_high")
         if getattr(metrics, "cost_drag", 0.0) > 0.03:
             warnings.append("cost_drag_high")
+        if getattr(metrics, "avg_cash_ratio", 0.0) > 0.5:
+            warnings.append("cash_ratio_high")
+        if getattr(metrics, "max_single_position_weight", 0.0) > 0.35:
+            warnings.append("concentration_high")
         if data_quality and data_quality.get("status") in {"failed", "missing"}:
             warnings.append("data_quality_failed")
         elif data_quality and data_quality.get("status") == "warning":
@@ -505,6 +511,10 @@ class BacktestEngine:
             "avg_daily_turnover": getattr(metrics, "avg_daily_turnover", 0.0),
             "annual_turnover": getattr(metrics, "annual_turnover", 0.0),
             "cost_drag": getattr(metrics, "cost_drag", 0.0),
+            "avg_position_count": getattr(metrics, "avg_position_count", 0.0),
+            "avg_cash_ratio": getattr(metrics, "avg_cash_ratio", 0.0),
+            "max_single_position_weight": getattr(metrics, "max_single_position_weight", 0.0),
+            "avg_top5_concentration": getattr(metrics, "avg_top5_concentration", 0.0),
             "warnings": warnings,
         }
 

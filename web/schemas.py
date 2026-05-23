@@ -131,6 +131,13 @@ class MetricsDict(BaseModel):
     total_slippage_cost: float = 0.0
     cost_drag: float = 0.0
     cost_to_nav: float = 0.0
+    avg_position_count: float = 0.0
+    max_position_count: int = 0
+    min_position_count: int = 0
+    avg_cash_ratio: float = 0.0
+    average_exposure: float = 0.0
+    max_single_position_weight: float = 0.0
+    avg_top5_concentration: float = 0.0
     total_fees: float
     total_commission: float  # 总佣金
     total_stamp_tax: float  # 总印花税
