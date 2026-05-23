@@ -385,11 +385,54 @@ class BacktestEngine:
             reason for _, reason in rejected
             if "容量" in str(reason)
         ]
+        reject_categories: dict[str, int] = {}
+        reject_reasons: dict[str, int] = {}
+        for _, reason in rejected:
+            reason_text = str(reason)
+            category = BacktestEngine._classify_reject_reason(reason_text)
+            reject_categories[category] = reject_categories.get(category, 0) + 1
+            reject_reasons[reason_text] = reject_reasons.get(reason_text, 0) + 1
+
+        top_reject_reasons = [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(
+                reject_reasons.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:5]
+        ]
         return {
             "capacity_limited_count": len(capacity_limited),
             "capacity_rejected_count": len(capacity_rejected),
             "avg_fill_ratio": round(sum(ratios) / len(ratios), 6) if ratios else 1.0,
+            "rejected_count": len(rejected),
+            "reject_categories": reject_categories,
+            "top_reject_reasons": top_reject_reasons,
         }
+
+    @staticmethod
+    def _classify_reject_reason(reason: str) -> str:
+        """将中文拒单原因归类成稳定 key，供 API/前端诊断使用。"""
+        if "容量" in reason:
+            return "capacity"
+        if "现金" in reason or "资金不足" in reason or "最低储备" in reason:
+            return "cash"
+        if "T+1" in reason or "卖出数量为零" in reason or "无持仓" in reason:
+            return "position"
+        if "涨停" in reason or "跌停" in reason:
+            return "limit_price"
+        if "限价" in reason:
+            return "limit_order"
+        if "停牌" in reason:
+            return "suspended"
+        if "无行情数据" in reason:
+            return "missing_bar"
+        if "最大回撤" in reason:
+            return "risk_stop"
+        if "仓位" in reason:
+            return "position_limit"
+        if "交易笔数" in reason:
+            return "trade_limit"
+        return "other"
 
     @staticmethod
     def _benchmark_diagnostics(

@@ -427,6 +427,32 @@ function benchmarkName(code) {
   return names[code] || code || '基准';
 }
 
+function formatRejectSummary(execDiag) {
+  const categories = execDiag.reject_categories || {};
+  const entries = Object.entries(categories)
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  if (!entries.length) return '—';
+
+  const labels = {
+    capacity: '容量',
+    cash: '现金',
+    position: '持仓/T+1',
+    limit_price: '涨跌停',
+    limit_order: '限价',
+    suspended: '停牌',
+    missing_bar: '缺行情',
+    risk_stop: '风控止损',
+    position_limit: '仓位上限',
+    trade_limit: '交易次数',
+    other: '其他',
+  };
+  return entries
+    .slice(0, 3)
+    .map(([key, count]) => `${labels[key] || key} ${count}`)
+    .join(' / ');
+}
+
 // ── 详细指标 ──────────────────────────────────────────────────────────────────
 function renderDetailMetrics(m, data = {}) {
   const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
@@ -453,6 +479,8 @@ function renderDetailMetrics(m, data = {}) {
     ['引擎版本', data.engine_version || '—', ''],
     ['容量缩量成交', `${execDiag.capacity_limited_count || 0} 笔`, ''],
     ['容量拒单', `${execDiag.capacity_rejected_count || 0} 笔`, ''],
+    ['总拒单', `${execDiag.rejected_count ?? data.rejected_count ?? 0} 笔`, ''],
+    ['主要拒单原因', formatRejectSummary(execDiag), ''],
     ['平均成交比例', Fmt.pct(execDiag.avg_fill_ratio ?? 1, 1), ''],
     ['总手续费', Fmt.money(m.total_fees), ''],
   ];
