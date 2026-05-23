@@ -8,6 +8,10 @@ let selectedSymbols = new Set();
 let currentSessionId = null;
 let equityChart = null;
 let currentMode = 'paper'; // "paper" | "live"
+const CHART_COLOR_UP = '#f87171';
+const CHART_COLOR_DOWN = '#34d399';
+const CLASS_UP = 'text-red-400';
+const CLASS_DOWN = 'text-green-400';
 
 // 多会话并行：每个 session 独立的状态
 let sessionStates = {};  // { [sid]: { equityData:[], trades:[], metrics:null, sse:EventSource|null, ... } }
@@ -627,7 +631,7 @@ function updateDashboard(data) {
   const posBody = document.getElementById('positions-body');
   if (data.positions && data.positions.length > 0) {
     posBody.innerHTML = data.positions.map(p => {
-      const pnlColor = p.unrealized_pnl >= 0 ? 'text-red-400' : 'text-green-400';
+      const pnlColor = p.unrealized_pnl >= 0 ? CLASS_UP : CLASS_DOWN;
       return `<tr class="hover:bg-gray-800/50">
         <td class="px-3 py-2 text-left text-gray-200">${p.symbol}</td>
         <td class="px-3 py-2 text-right">${p.total_qty}</td>
@@ -658,11 +662,8 @@ function updateDashboard(data) {
     // 计算持有现金（从初始资金累加每笔交易的净现金流）
     let runningCash = _cur()?.initial_capital || (data.initial_capital || _cur()?.metrics?.initial_value || 1000000);
     tradeBody.innerHTML = sortedTrades.map(t => {
-      const sideColor = t.side === 'BUY' ? 'text-green-400' : 'text-red-400';
+      const sideColor = t.side === 'BUY' ? CLASS_UP : CLASS_DOWN;
       const sideText = t.side === 'BUY' ? '买入' : '卖出';
-      const net = t.side === 'BUY'
-        ? -(t.amount + (t.commission || 0))
-        : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
       // net_amount from DB is always positive (cost for buy, proceeds for sell)
       const dbNet = t.net_amount || 0;
       if (t.side === 'BUY') runningCash -= dbNet;
@@ -677,7 +678,7 @@ function updateDashboard(data) {
         <td class="px-3 py-2 text-right">${Fmt.money(t.amount)}</td>
         <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.commission)}</td>
         <td class="px-3 py-2 text-right text-gray-500">${Fmt.money(t.stamp_tax)}</td>
-        <td class="px-3 py-2 text-right ${net >= 0 ? 'text-red-400' : 'text-green-400'}">${Fmt.money(net)}</td>
+        <td class="px-3 py-2 text-right ${sideColor}">${Fmt.money(dbNet)}</td>
         <td class="px-3 py-2 text-right text-blue-400 font-medium">${Fmt.money(runningCash)}</td>
       </tr>`;
     }).join('');
@@ -693,14 +694,14 @@ function renderMetricsCards(m) {
   const cards = document.getElementById('metrics-cards');
 
   const items = [
-    { label: '总收益率', value: Fmt.pct(m.total_return), color: m.total_return >= 0 ? 'text-red-400' : 'text-green-400' },
-    { label: '年化收益率', value: Fmt.pct(m.annual_return), color: m.annual_return >= 0 ? 'text-red-400' : 'text-green-400' },
-    { label: '最大回撤', value: Fmt.pct(m.max_drawdown), color: 'text-green-400' },
-    { label: '夏普比率', value: (m.sharpe_ratio || 0).toFixed(3), color: m.sharpe_ratio >= 1 ? 'text-green-400' : 'text-gray-300' },
+    { label: '总收益率', value: Fmt.pct(m.total_return), color: m.total_return >= 0 ? CLASS_UP : CLASS_DOWN },
+    { label: '年化收益率', value: Fmt.pct(m.annual_return), color: m.annual_return >= 0 ? CLASS_UP : CLASS_DOWN },
+    { label: '最大回撤', value: Fmt.pct(m.max_drawdown), color: CLASS_DOWN },
+    { label: '夏普比率', value: (m.sharpe_ratio || 0).toFixed(3), color: m.sharpe_ratio >= 1 ? CLASS_UP : 'text-gray-300' },
     { label: '胜率', value: Fmt.pct(m.win_rate), color: 'text-gray-200' },
     { label: '总交易次数', value: m.total_trades || 0, color: 'text-gray-200' },
     { label: '总手续费', value: Fmt.money(m.total_fees), color: 'text-gray-400' },
-    { label: '盈亏比', value: (m.profit_factor || 0).toFixed(2), color: m.profit_factor >= 1.5 ? 'text-green-400' : 'text-gray-200' },
+    { label: '盈亏比', value: (m.profit_factor || 0).toFixed(2), color: m.profit_factor >= 1.5 ? CLASS_UP : 'text-gray-200' },
   ];
 
   cards.innerHTML = items.map(i => `
@@ -713,17 +714,17 @@ function renderMetricsCards(m) {
   // 详细指标表（与回测结果页一致）
   const pf = m.profit_factor == null ? '∞' : Fmt.num(m.profit_factor, 2);
   const rows = [
-    ['总收益率',      Fmt.pct(m.total_return), m.total_return >= 0 ? 'text-red-400' : 'text-green-400'],
-    ['年化收益率',    Fmt.pct(m.annual_return), m.annual_return >= 0 ? 'text-red-400' : 'text-green-400'],
-    ['最大回撤',      Fmt.pct(m.max_drawdown), 'text-green-400'],
+    ['总收益率',      Fmt.pct(m.total_return), m.total_return >= 0 ? CLASS_UP : CLASS_DOWN],
+    ['年化收益率',    Fmt.pct(m.annual_return), m.annual_return >= 0 ? CLASS_UP : CLASS_DOWN],
+    ['最大回撤',      Fmt.pct(m.max_drawdown), CLASS_DOWN],
     ['回撤区间',      (m.max_drawdown_start && m.max_drawdown_end) ? `${m.max_drawdown_start} → ${m.max_drawdown_end}` : '—', ''],
     ['年化波动率',    Fmt.pct(m.volatility, 2), ''],
     ['夏普比率',      Fmt.num(m.sharpe_ratio, 4), ''],
     ['索提诺比率',    Fmt.num(m.sortino_ratio, 4), ''],
     ['卡玛比率',      Fmt.num(m.calmar_ratio, 4), ''],
     ['胜率',          Fmt.pct(m.win_rate, 1), ''],
-    ['平均盈利',      Fmt.pct(m.avg_profit, 2), 'text-red-400'],
-    ['平均亏损',      Fmt.pct(m.avg_loss, 2), 'text-green-400'],
+    ['平均盈利',      Fmt.pct(m.avg_profit, 2), CLASS_UP],
+    ['平均亏损',      Fmt.pct(m.avg_loss, 2), CLASS_DOWN],
     ['盈亏比',        pf, ''],
     ['平均持仓天数',  (m.avg_hold_days || 0).toFixed(1) + ' 天', ''],
     ['总手续费',      Fmt.money(m.total_fees), ''],
@@ -740,14 +741,18 @@ function renderMetricsCards(m) {
 }
 
 function exportTradesCSV(trades) {
-  const header = '交易ID,日期,代码,方向,价格,数量,金额,佣金,印花税,净额';
-  const rows = trades.map(t => {
-    const net = t.side === 'BUY'
-      ? -(t.amount + (t.commission || 0))
-      : (t.amount - (t.commission || 0) - (t.stamp_tax || 0));
-    return [t.trade_id || '', t.trade_date, t.symbol, t.side === 'BUY' ? '买入' : '卖出',
+  const header = '交易ID,日期,方向,股票代码,公司名称,价格,数量,成交额,佣金,印花税,净额,持有现金';
+  const nameMap = {};
+  (allSymbols || []).forEach(s => { nameMap[s.symbol] = s.name || ''; });
+  const sortedTrades = [...trades].sort((a, b) => (a.trade_date || '').localeCompare(b.trade_date || ''));
+  let runningCash = _cur()?.initial_capital || (_cur()?.metrics?.initial_value || 1000000);
+  const rows = sortedTrades.map(t => {
+    const dbNet = t.net_amount || 0;
+    if (t.side === 'BUY') runningCash -= dbNet;
+    else runningCash += dbNet;
+    return [t.trade_id || '', t.trade_date, t.side === 'BUY' ? '买入' : '卖出', t.symbol, nameMap[t.symbol] || '',
       t.price, t.quantity, t.amount,
-      (t.commission || 0).toFixed(2), (t.stamp_tax || 0).toFixed(2), net.toFixed(2)
+      (t.commission || 0).toFixed(2), (t.stamp_tax || 0).toFixed(2), dbNet.toFixed(2), runningCash.toFixed(2)
     ].join(',');
   });
   const csv = '\uFEFF' + header + '\n' + rows.join('\n');
@@ -793,7 +798,7 @@ function renderMonthlyReturns(equityArr) {
       type: 'bar', barMaxWidth: 24,
       data: monthly.map(m => ({
         value: +(m.ret * 100).toFixed(2),
-        itemStyle: { color: m.ret >= 0 ? '#ef4444' : '#22c55e', borderRadius: [2, 2, 0, 0] },
+        itemStyle: { color: m.ret >= 0 ? CHART_COLOR_UP : CHART_COLOR_DOWN, borderRadius: [2, 2, 0, 0] },
       })),
     }],
   });
@@ -828,11 +833,11 @@ function _renderMonthlyHeatmap(monthly) {
     if (ret === undefined || ret === null) return { bg: '#111827', text: '#4b5563' };
     if (ret >  0.05) return { bg: '#991b1b', text: '#fff' };
     if (ret >  0.02) return { bg: '#dc2626', text: '#fff' };
-    if (ret >  0.005) return { bg: '#ef4444', text: '#fff' };
+    if (ret >  0.005) return { bg: CHART_COLOR_UP, text: '#fff' };
     if (ret >  0)    return { bg: '#fca5a5', text: '#7f1d1d' };
     if (ret === 0)   return { bg: '#1f2937', text: '#9ca3af' };
     if (ret > -0.005) return { bg: '#bbf7d0', text: '#14532d' };
-    if (ret > -0.02) return { bg: '#22c55e', text: '#14532d' };
+    if (ret > -0.02) return { bg: CHART_COLOR_DOWN, text: '#14532d' };
     if (ret > -0.05) return { bg: '#16a34a', text: '#fff' };
     return { bg: '#15803d', text: '#fff' };
   }
@@ -1078,7 +1083,7 @@ function updateEquityChart(trades, eqData) {
         symbol: 'triangle',
         symbolRotate: isBuy ? 0 : 180,
         symbolSize: 16,
-        itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+        itemStyle: { color: isBuy ? CHART_COLOR_UP : CHART_COLOR_DOWN, borderWidth: 0 },
         emphasis: { label: { show: true, formatter: label.replace(/\n/g, ' '), position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
       };
     }).filter(Boolean);
@@ -1099,8 +1104,8 @@ function updateEquityChart(trades, eqData) {
     const dd = eqData.map(d => d.drawdown || 0);
     series.push({
       name: '回撤', type: 'line', data: dd, smooth: true, symbol: 'none', xAxisIndex: 1, yAxisIndex: 1,
-      lineStyle: { width: 1 }, itemStyle: { color: '#f87171' },
-      areaStyle: { color: 'rgba(248,113,113,0.15)' },
+      lineStyle: { width: 1 }, itemStyle: { color: CHART_COLOR_DOWN },
+      areaStyle: { color: 'rgba(52,211,153,0.15)' },
     });
   }
 

@@ -180,6 +180,8 @@
   <script>
   // ── 调色板 ────────────────────────────────────────────────────────────────
   const COLORS = ['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#4ade80'];
+  const COLOR_UP = '#f87171';
+  const COLOR_DOWN = '#34d399';
   let SYMBOL_PRESETS = [];
   const PERIOD_PRESETS = [
     { id: 'five_years', label: '近5年', months: 60 },
@@ -772,7 +774,7 @@
           params.filter(p => p.seriesName !== '基准（0%）').forEach(p => {
             if (p.value == null) return;
             const v = p.value;
-            const color = v >= 0 ? '#ef4444' : '#22c55e';
+            const color = v >= 0 ? COLOR_UP : COLOR_DOWN;
             html += `<div style="display:flex;justify-content:space-between;gap:16px">
               <span>${p.marker}${p.seriesName}</span>
               <span style="color:${color};font-weight:600">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>
@@ -798,14 +800,14 @@
 
   function renderMetricsTable(results) {
     const METRICS = [
-      { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#ef4444' : '#22c55e' },
-      { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? '#ef4444' : '#22c55e' },
-      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(v), colorFn: () => '#22c55e' },
-      { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? '#ef4444' : v >= 0 ? '#e5e7eb' : '#22c55e' },
+      { key: 'total_return',    label: '总收益率',   fmt: v => fmtPct(v), colorFn: v => v >= 0 ? COLOR_UP : COLOR_DOWN },
+      { key: 'annual_return',   label: '年化收益率', fmt: v => fmtPct(v), colorFn: v => v >= 0 ? COLOR_UP : COLOR_DOWN },
+      { key: 'max_drawdown',    label: '最大回撤',   fmt: v => fmtPct(v), colorFn: () => COLOR_DOWN },
+      { key: 'sharpe_ratio',    label: '夏普比率',   fmt: v => v.toFixed(3), colorFn: v => v >= 1 ? COLOR_UP : v >= 0 ? '#e5e7eb' : COLOR_DOWN },
       { key: 'sortino_ratio',   label: '索提诺比率', fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
       { key: 'calmar_ratio',    label: '卡玛比率',   fmt: v => v.toFixed(3), colorFn: () => '#e5e7eb' },
-      { key: 'win_rate',        label: '胜率',       fmt: v => fmtPct(v), colorFn: v => v >= 0.5 ? '#ef4444' : '#22c55e' },
-      { key: 'profit_factor',   label: '盈亏比',     fmt: v => v.toFixed(2), colorFn: v => v >= 1 ? '#ef4444' : '#22c55e' },
+      { key: 'win_rate',        label: '胜率',       fmt: v => fmtPct(v), colorFn: v => v >= 0.5 ? COLOR_UP : COLOR_DOWN },
+      { key: 'profit_factor',   label: '盈亏比',     fmt: v => v.toFixed(2), colorFn: v => v >= 1 ? COLOR_UP : COLOR_DOWN },
       { key: 'total_trades',    label: '总交易次数', fmt: v => v + ' 笔', colorFn: () => '#e5e7eb' },
       { key: 'total_fees',      label: '总手续费',   fmt: v => fmtMoney(v), colorFn: () => '#fbbf24' },
       { key: 'final_value',     label: '最终净值',   fmt: v => fmtMoney(v), colorFn: () => '#e5e7eb' },

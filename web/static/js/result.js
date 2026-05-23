@@ -5,6 +5,10 @@
 // 股票代码 → 公司名映射（从后端动态获取）
 let STOCK_NAMES = {};
 let stockNamesLoaded = false;
+const CHART_COLOR_UP = '#f87171';
+const CHART_COLOR_DOWN = '#34d399';
+const CLASS_UP = 'text-red-400';
+const CLASS_DOWN = 'text-green-400';
 
 // 从后端获取股票名称映射
 async function loadStockNames() {
@@ -352,7 +356,7 @@ function renderEquityChart(curve, metrics, trades = [], benchCurve = null, bench
   const ddEnd = metrics.max_drawdown_end;
   const markArea = ddStart && ddEnd ? {
     silent: true,
-    itemStyle: { color: 'rgba(239,68,68,0.06)' },
+    itemStyle: { color: 'rgba(52,211,153,0.08)' },
     data: [[{ xAxis: ddStart }, { xAxis: ddEnd }]],
   } : {};
 
@@ -419,8 +423,8 @@ function renderEquityChart(curve, metrics, trades = [], benchCurve = null, bench
         data: curve.drawdown,
         smooth: false,
         symbol: 'none',
-        lineStyle: { color: '#ef4444', width: 1 },
-        areaStyle: { color: 'rgba(239,68,68,0.15)' },
+        lineStyle: { color: CHART_COLOR_DOWN, width: 1 },
+        areaStyle: { color: 'rgba(52,211,153,0.15)' },
       },
       // 基准线（如果有）
       ...(benchCurve && benchCurve.values && benchCurve.values.length > 0 ? [{
@@ -597,7 +601,7 @@ function renderTradesTable(trades) {
   tbody.innerHTML = trades.map(t => {
     const isBuy = t.side === 'BUY';
     const rowClass = isBuy ? 'trade-buy' : 'trade-sell';
-    const sideColor = isBuy ? 'text-green-400' : 'text-red-400';
+    const sideColor = isBuy ? CLASS_UP : CLASS_DOWN;
     const companyName = STOCK_NAMES[t.symbol] || '';
     const requestedQty = t.requested_quantity || t.quantity;
     const fillRatio = t.fill_ratio ?? (requestedQty ? t.quantity / requestedQty : 1);
@@ -619,7 +623,7 @@ function renderTradesTable(trades) {
         <td class="text-right text-gray-300">${t.amount.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.commission.toFixed(2)}</td>
         <td class="text-right text-yellow-600">${t.stamp_tax.toFixed(2)}</td>
-        <td class="text-right ${isBuy ? 'text-red-400' : 'text-green-400'} font-medium">${t.net_amount.toFixed(2)}</td>
+        <td class="text-right ${isBuy ? CLASS_UP : CLASS_DOWN} font-medium">${t.net_amount.toFixed(2)}</td>
         <td class="text-right text-blue-400 font-medium">${t.cash_after.toFixed(2)}</td>
       </tr>
     `;
@@ -662,7 +666,7 @@ function _buildTradeMarkers(trades, curve) {
       name: label,
       symbol: 'triangle',
       symbolRotate: isBuy ? 0 : 180,
-      itemStyle: { color: isBuy ? '#22c55e' : '#ef4444', borderWidth: 0 },
+      itemStyle: { color: isBuy ? CHART_COLOR_UP : CHART_COLOR_DOWN, borderWidth: 0 },
       emphasis: { label: { show: true, formatter: label, position: 'top', fontSize: 11, color: '#e5e7eb', backgroundColor: '#1f2937', borderColor: '#374151', borderWidth: 1, padding: [4, 8], borderRadius: 4 } },
     };
   }).filter(Boolean);
@@ -701,7 +705,7 @@ function renderMonthlyReturns(curve) {
       barMaxWidth: 24,
       data: monthly.map(m => ({
         value: +(m.ret * 100).toFixed(2),
-        itemStyle: { color: m.ret >= 0 ? '#22c55e' : '#ef4444', borderRadius: [2, 2, 0, 0] },
+        itemStyle: { color: m.ret >= 0 ? CHART_COLOR_UP : CHART_COLOR_DOWN, borderRadius: [2, 2, 0, 0] },
       })),
     }],
   });
@@ -739,15 +743,15 @@ function _renderMonthlyHeatmap(monthly) {
 
   function cellColor(ret) {
     if (ret === undefined || ret === null) return { bg: '#111827', text: '#4b5563' };
-    if (ret >  0.05) return { bg: '#15803d', text: '#fff' };
-    if (ret >  0.02) return { bg: '#16a34a', text: '#fff' };
-    if (ret >  0.005) return { bg: '#22c55e', text: '#14532d' };
-    if (ret >  0)    return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret >  0.05) return { bg: '#991b1b', text: '#fff' };
+    if (ret >  0.02) return { bg: '#dc2626', text: '#fff' };
+    if (ret >  0.005) return { bg: CHART_COLOR_UP, text: '#fff' };
+    if (ret >  0)    return { bg: '#fca5a5', text: '#7f1d1d' };
     if (ret === 0)   return { bg: '#1f2937', text: '#9ca3af' };
-    if (ret > -0.005) return { bg: '#fca5a5', text: '#7f1d1d' };
-    if (ret > -0.02) return { bg: '#ef4444', text: '#fff' };
-    if (ret > -0.05) return { bg: '#dc2626', text: '#fff' };
-    return { bg: '#991b1b', text: '#fff' };
+    if (ret > -0.005) return { bg: '#bbf7d0', text: '#14532d' };
+    if (ret > -0.02) return { bg: CHART_COLOR_DOWN, text: '#14532d' };
+    if (ret > -0.05) return { bg: '#16a34a', text: '#fff' };
+    return { bg: '#15803d', text: '#fff' };
   }
 
   const headerCells = months.map(m =>

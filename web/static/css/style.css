@@ -40,8 +40,8 @@ body {
 .negative { color: var(--color-down) !important; }
 
 /* 成交记录表格行 */
-.trade-buy td:first-child + td { color: var(--color-up); }
-.trade-sell td:first-child + td { color: var(--color-down); }
+.trade-buy td:nth-child(3) { color: var(--color-up); }
+.trade-sell td:nth-child(3) { color: var(--color-down); }
 
 /* 历史记录卡片 */
 .history-card {
